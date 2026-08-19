@@ -1,7 +1,7 @@
 # hp-m177
 
-Scan client for the **HP Color LaserJet Pro MFP M177fw** on a Mac, designed to
-**coexist with the working AirPrint print queue**.
+Scan client for the **HP Color LaserJet Pro MFP M177fw** on a Mac. It is
+meant to **sit beside** the working AirPrint print queue, not replace it.
 
 ## Not an HP project
 
@@ -16,6 +16,8 @@ only talks the network protocols the printer already exposes on the LAN.
 ## License
 
 [MIT](LICENSE). Use it, fork it, break it, fix it. No warranty.
+
+## What it does
 
 Apple Image Capture does not see this 2014 MFP as a network scanner: the
 firmware advertises `_ipp._tcp` (print) and `_scanner._tcp` → port **8289**
@@ -38,25 +40,52 @@ This project:
 It does **not** replace the stock AirPrint driver, write a CUPS filter, or
 install a kernel extension / ICA plugin.
 
-## Install
+## Install the CLI
 
 Requires Rust **1.82 or newer** (`cargo --version`). Newer crates.io
 releases of clap/icu/getrandom need edition 2024 (Cargo 1.85+); this
-repo pins older versions so 1.82 works. Always install with `--locked`.
+repo pins older versions so 1.82 works. Always use `--locked`.
 
 ```bash
-git pull
+git clone https://github.com/jensabrahamsson/hp-m177-mac-scanner.git
+cd hp-m177-mac-scanner
 cargo install --path . --locked
 ```
 
-That puts `hp-m177`, `hp-m177-bridge`, `hp-m177-gui`, and `hp-m177-fake` on
-your `PATH` (typically `~/.cargo/bin`).
-
-Native AppKit GUI (optional, needs Xcode CLT):
+That installs `hp-m177`, `hp-m177-bridge`, `hp-m177-gui`, and `hp-m177-fake`
+to `~/.cargo/bin`. If the shell cannot find them:
 
 ```bash
-./scripts/build-gui.sh
+export PATH="$HOME/.cargo/bin:$PATH"
 ```
+
+Check: `hp-m177 --help`
+
+## Install the GUI
+
+Needs the Xcode command-line tools (`swiftc`) and a working `hp-m177` on
+`PATH` (the step above).
+
+```bash
+./scripts/install-gui.sh
+```
+
+That builds the AppKit app and installs:
+
+| Location | What |
+| --- | --- |
+| `~/Applications/HP M177 Scanner.app` | Spotlight / Dock / Finder |
+| `~/.cargo/bin/hp-m177-native-gui` | same binary; `hp-m177-gui` finds it automatically |
+
+Open it from Spotlight (**HP M177 Scanner**), or:
+
+```bash
+open "$HOME/Applications/HP M177 Scanner.app"
+# or
+hp-m177-gui
+```
+
+In the window: host/IP → **Add scanner** → choose source/color/DPI/format → **Scan**.
 
 ## Add the scanner
 
@@ -79,24 +108,17 @@ Device records live in
 `~/Library/Application Support/hp-m177/devices.json`
 (override with `HP_M177_HOME`).
 
+If `add` says there is no usable scan protocol, the printer is off the LAN
+or SOAP port **8289** is not answering. Printing can still work via AirPrint.
+
 ## Scan (CLI)
 
 ```bash
-hp-m177 scan --source platen --color color --dpi 300 --format jpeg --output scan.jpg
-hp-m177 scan --source adf --color gray --dpi 300 --format pdf --output scan.pdf
+hp-m177 scan --source platen --color color --dpi 300 --format jpeg --output ~/Desktop/scan.jpg
+hp-m177 scan --source adf --color gray --dpi 300 --format pdf --output ~/Desktop/scan.pdf
 ```
 
-## GUI
-
-```bash
-hp-m177-gui
-```
-
-The AppKit window (or the fallback form) can add the device and run the same
-scan options. `hp-m177-gui --smoke --host 127.0.0.1:…` is a headless path used
-by tests.
-
-## Image Capture / Preview (Mac-native scanner)
+## Image Capture / Preview
 
 Keep the AirPrint printer as-is. In a terminal:
 
@@ -135,7 +157,7 @@ cargo test
 
 The suite starts a protocol-accurate fake MFP (SOAP + DIME + eSCL caps),
 drives the library, launches the real CLI twice, and launches the real eSCL
-listener twice.
+listener (including the `hp-m177-bridge` binary) twice.
 
 ## More documentation
 

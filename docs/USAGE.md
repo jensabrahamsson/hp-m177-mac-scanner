@@ -2,14 +2,33 @@
 
 This project is independent of HP. See the README disclaimer.
 
+## Install (what actually works)
+
+```bash
+# 1. CLI tools → ~/.cargo/bin
+cargo install --path . --locked
+export PATH="$HOME/.cargo/bin:$PATH"
+
+# 2. Native AppKit app → ~/Applications + ~/.cargo/bin
+./scripts/install-gui.sh
+```
+
+`--locked` is required on Rust 1.82. Without it, Cargo may pull clap 4.6 /
+icu 2.3, which need edition 2024 (Cargo 1.85+).
+
 ## Configuration
 
 | Variable | Meaning |
 | --- | --- |
 | `HP_M177_HOME` | Directory for `devices.json` (default: `~/Library/Application Support/hp-m177`) |
-| `HP_M177_BIN` | Path to `hp-m177` used by the AppKit GUI |
-| `HP_M177_NATIVE_GUI` | Optional path to the compiled Swift GUI |
+| `HP_M177_BIN` | Path to `hp-m177` used by the AppKit GUI (install script sets this in the `.app`) |
+| `HP_M177_NATIVE_GUI` | Optional override for the compiled Swift binary |
 | `HP_M177_FAKE` | Host used by `hp-m177-gui --smoke` |
+
+`hp-m177-gui` looks for the native window in this order:
+`HP_M177_NATIVE_GUI`, the same directory as itself,
+`~/.cargo/bin/hp-m177-native-gui`, then
+`~/Applications/HP M177 Scanner.app`.
 
 ## `hp-m177`
 
@@ -38,23 +57,37 @@ LAN should import through this machine.
 hp-m177-bridge --port 8087
 ```
 
-## `hp-m177-gui`
+Leave that process running while Image Capture / Preview is open.
+
+## GUI
+
+After `./scripts/install-gui.sh`:
 
 ```
-hp-m177-gui                  # AppKit helper if present, else interactive form
-hp-m177-gui --headless       # start and exit (no window)
+open "$HOME/Applications/HP M177 Scanner.app"
+hp-m177-gui
+```
+
+Spotlight name: **HP M177 Scanner**.
+
+In the window: **Discover** or type the printer IP → **Add scanner** →
+source / color / DPI / format / output path → **Scan**.
+**Add printer (if missing)** only creates an AirPrint queue when none exists.
+
+Developer flags (no window):
+
+```
+hp-m177-gui --headless
 hp-m177-gui --smoke --host HOST --output FILE
 ```
 
 `--smoke` calls `GuiApp::add_scanner` and `GuiApp::scan` (the same functions
 the automated tests call).
 
-Build the AppKit window:
+To rebuild only the Swift binary without installing the `.app`:
 
 ```
 ./scripts/build-gui.sh
-export HP_M177_NATIVE_GUI=./target/hp-m177-native-gui
-hp-m177-gui
 ```
 
 ## `hp-m177-fake`

@@ -54,7 +54,7 @@ fn main() {
         return;
     }
 
-    if let Ok(helper) = std::env::var("HP_M177_NATIVE_GUI") {
+    if let Some(helper) = find_native_gui() {
         let status = Command::new(helper).status();
         if let Ok(s) = status {
             std::process::exit(s.code().unwrap_or(1));
@@ -65,6 +65,32 @@ fn main() {
         eprintln!("hp-m177-gui: {e}");
         std::process::exit(1);
     }
+}
+
+fn find_native_gui() -> Option<PathBuf> {
+    if let Ok(helper) = std::env::var("HP_M177_NATIVE_GUI") {
+        let p = PathBuf::from(helper);
+        if p.is_file() {
+            return Some(p);
+        }
+    }
+    let mut candidates = Vec::new();
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            candidates.push(dir.join("hp-m177-native-gui"));
+        }
+    }
+    if let Some(home) = std::env::var_os("HOME") {
+        let home = PathBuf::from(home);
+        candidates.push(home.join(".cargo/bin/hp-m177-native-gui"));
+        candidates.push(
+            home.join("Applications/HP M177 Scanner.app/Contents/MacOS/HP-M177-Scan"),
+        );
+    }
+    candidates.push(PathBuf::from(
+        "/Applications/HP M177 Scanner.app/Contents/MacOS/HP-M177-Scan",
+    ));
+    candidates.into_iter().find(|p| p.is_file())
 }
 
 fn interactive_fallback(default_host: Option<String>) -> hp_m177::Result<()> {
