@@ -78,10 +78,16 @@ falls through to WSD.
 ## Local eSCL facade
 
 `hp-m177-bridge` implements modern eSCL (`2011/05/03`) toward the Mac and
-calls the same SOAP job cycle toward the MFP (or toward `hp-m177-fake` in
-tests). That is how Image Capture sees platen+ADF, color+gray, JPEG+PDF.
+calls the shared `scan()` backend toward the MFP (SOAP, WSD, or native eSCL
+as recorded on the device — not SOAP-only). Tests drive this against
+`hp-m177-fake`. Image Capture sees platen+ADF, color+gray, JPEG+PDF.
+
+PDF output is always a **one-page** JPEG wrapper (`finalize()` keeps the
+first retrieved page). TIFF is produced locally by the CLI/GUI; the eSCL
+facade advertises JPEG and PDF only.
 
 ## DIME
 
 See `src/dime.rs` (draft-nielsen-dime-02). Spec-faithful fixture:
-`fixtures/dime-jpeg.bin`.
+`fixtures/dime-jpeg.bin`. Continuation (CF) chunks are concatenated by
+`extract_image`; `fixtures/dime-jpeg-chunked.bin` covers that path.

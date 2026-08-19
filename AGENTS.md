@@ -22,6 +22,9 @@ cargo install --path . --locked
 ./scripts/install-gui.sh
 ```
 
+`rust-toolchain.toml` pins **1.82.0**. CI (`.github/workflows/test.yml`) runs
+`cargo test --locked`. The AppKit helper needs **swiftc** and **macOS 12+**.
+
 Installs CLI tools to `~/.cargo/bin` and the app bundle to
 `~/Applications/HP M177 Scanner.app`.
 

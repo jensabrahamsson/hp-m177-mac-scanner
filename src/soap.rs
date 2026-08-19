@@ -92,7 +92,7 @@ pub fn create_scan_job_short_xml(req: &ScanRequest, scan_id: &str) -> String {
 pub fn get_job_info_xml(job_id: &str) -> String {
     format!(
         r#"{ENVELOPE_OPEN}<wscn:GetJobInfo>
-<jobId xsi:type="xsd:String">{id}</jobId>
+<JobId xsi:type="xsd:int">{id}</JobId>
 </wscn:GetJobInfo>{ENVELOPE_CLOSE}"#,
         id = xml_escape(job_id)
     )
@@ -292,7 +292,23 @@ pub fn parse_job_ticket(xml: &str) -> Option<ScanRequest> {
         dpi,
         format: crate::model::OutputFormat::Jpeg,
         output: None,
-        region: None,
+        region: {
+            let x = first_text(xml, "ScanRegionXOffset").and_then(|s| s.parse().ok());
+            let y = first_text(xml, "ScanRegionYOffset").and_then(|s| s.parse().ok());
+            let w = first_text(xml, "ScanRegionWidth").and_then(|s| s.parse().ok());
+            let h = first_text(xml, "ScanRegionHeight").and_then(|s| s.parse().ok());
+            match (x, y, w, h) {
+                (Some(x), Some(y), Some(width), Some(height)) if width > 0 && height > 0 => {
+                    Some(crate::model::ScanRegion {
+                        x,
+                        y,
+                        width,
+                        height,
+                    })
+                }
+                _ => None,
+            }
+        },
     })
 }
 

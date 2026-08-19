@@ -136,25 +136,37 @@ pub fn decode(mut bytes: &[u8]) -> Result<Vec<DimeRecord>> {
     Ok(recs)
 }
 
-/// Concatenate image records. Chunked records with the same type are joined.
-/// Falls back to the first binary-looking payload after the SOAP envelope.
+fn is_image_type(rec: &DimeRecord) -> bool {
+    let t = rec.type_str().to_ascii_lowercase();
+    t.contains("jpeg")
+        || t.contains("jpg")
+        || t.contains("jfif")
+        || t.contains("image/")
+        || t.contains("octet-stream")
+        || t.contains("pdf")
+}
+
+/// Concatenate image records. Continuation records (CF) with empty TYPE/ID
+/// are appended to the preceding image payload.
 pub fn extract_image(bytes: &[u8]) -> Result<Vec<u8>> {
     let recs = decode(bytes)?;
     let mut image = Vec::new();
+    let mut collecting = false;
     for rec in &recs {
-        let t = rec.type_str().to_ascii_lowercase();
-        if t.contains("jpeg")
-            || t.contains("jpg")
-            || t.contains("jfif")
-            || t.contains("image/")
-            || t.contains("octet-stream")
-            || t.contains("pdf")
-        {
+        if is_image_type(rec) {
+            collecting = true;
             image.extend_from_slice(&rec.data);
+            if !rec.chunked {
+                collecting = false;
+            }
+        } else if collecting && rec.typ.is_empty() {
+            image.extend_from_slice(&rec.data);
+            if !rec.chunked {
+                collecting = false;
+            }
         }
     }
     if image.is_empty() {
-        // SOAP is almost always the first record; take everything after it.
         for rec in recs.iter().skip(1) {
             image.extend_from_slice(&rec.data);
         }
@@ -165,6 +177,30 @@ pub fn extract_image(bytes: &[u8]) -> Result<Vec<u8>> {
         ));
     }
     Ok(image)
+}
+
+/// SOAP record plus a JPEG split into CF continuation records.
+pub fn wrap_soap_and_jpeg_chunked(soap_xml: &[u8], jpeg: &[u8], chunk: usize) -> Vec<u8> {
+    let chunk = chunk.max(1);
+    let mut recs = vec![DimeRecord::media("text/xml", soap_xml.to_vec())];
+    let parts: Vec<&[u8]> = jpeg.chunks(chunk).collect();
+    for (i, part) in parts.iter().enumerate() {
+        let last_img = i + 1 == parts.len();
+        recs.push(DimeRecord {
+            first: false,
+            last: false,
+            chunked: !last_img,
+            type_format: if i == 0 { TYPE_MEDIA } else { 0 },
+            id: Vec::new(),
+            typ: if i == 0 {
+                b"image/jpeg".to_vec()
+            } else {
+                Vec::new()
+            },
+            data: part.to_vec(),
+        });
+    }
+    encode(&recs)
 }
 
 /// Build a SOAP+JPEG DIME body the way this firmware does.
@@ -200,5 +236,24 @@ mod tests {
         let recs = decode(&body).unwrap();
         assert_eq!(recs.len(), 2);
         assert_eq!(recs[1].data, [0xff, 0xd8, 0x00, 0xff, 0xd9]);
+    }
+
+    #[test]
+    fn chunked_continuation_is_concatenated() {
+        let jpeg = [0xff, 0xd8, 1, 2, 3, 4, 0xff, 0xd9];
+        let body = wrap_soap_and_jpeg_chunked(b"<ok/>", &jpeg, 3);
+        let recs = decode(&body).unwrap();
+        assert!(recs.iter().any(|r| r.chunked), "CF bit must be set on a chunk");
+        let got = extract_image(&body).unwrap();
+        assert_eq!(got, jpeg);
+    }
+
+    #[test]
+    fn chunked_fixture_is_consumed_by_shipped_extractor() {
+        let raw = include_bytes!("../fixtures/dime-jpeg-chunked.bin");
+        let jpeg = extract_image(raw).unwrap();
+        assert_eq!(&jpeg[..2], &[0xff, 0xd8]);
+        assert_eq!(&jpeg[jpeg.len() - 2..], &[0xff, 0xd9]);
+        assert!(jpeg.len() > 4);
     }
 }

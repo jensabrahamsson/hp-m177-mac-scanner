@@ -179,7 +179,7 @@ whose URI or name looks like the M177fw already exists, it is left untouched.
 ## Tests
 
 ```bash
-cargo test
+cargo test --locked
 ```
 
 The suite starts a protocol-accurate fake MFP (SOAP + DIME + eSCL caps),

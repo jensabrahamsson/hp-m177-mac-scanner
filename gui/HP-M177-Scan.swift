@@ -12,8 +12,7 @@ import Foundation
 
 let args = CommandLine.arguments
 if args.contains("--smoke") {
-    FileHandle.standardOutput.write(Data("gui-native-smoke-ok\n".utf8))
-    exit(0)
+    exit(AppDelegate.smoke(args))
 }
 
 if let idx = args.firstIndex(of: "--exec"), args.index(after: idx) < args.endIndex {
@@ -227,11 +226,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         formatPopup.target = self
         formatPopup.action = #selector(formatChanged)
 
-        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
-            ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Documents")
         styleField(outputField)
-        outputField.stringValue = docs.appendingPathComponent("scan.jpg").path
-        outputField.placeholderString = "~/Documents/scan.jpg"
+        outputField.stringValue = Self.defaultDocumentsPath(ext: "jpg")
+        outputField.placeholderString = "~/Documents/scan-<timestamp>.jpg"
 
         addButton = pushButton("Add scanner", #selector(addScanner))
         discoverButton = pushButton("Discover", #selector(discoverLan))
@@ -401,7 +398,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     static func defaultDocumentsPath(ext: String) -> String {
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Documents")
-        return docs.appendingPathComponent("scan.\(ext)").path
+        let ts = Int(Date().timeIntervalSince1970)
+        return docs.appendingPathComponent("scan-\(ts).\(ext)").path
+    }
+
+    /// Real add+scan (not a stub). Same CLI path as the buttons.
+    static func smoke(_ argv: [String]) -> Int32 {
+        var host = ""
+        var output = defaultDocumentsPath(ext: "jpg")
+        var i = 0
+        while i < argv.count {
+            let a = argv[i]
+            if a == "--host", i + 1 < argv.count { host = argv[i + 1] }
+            if a == "--output", i + 1 < argv.count { output = argv[i + 1] }
+            i += 1
+        }
+        if host.isEmpty {
+            fputs("hp-m177-gui --smoke needs --host\n", stderr)
+            return 2
+        }
+        let d = AppDelegate()
+        let add = d.runHpStatus(["add", host])
+        if add != 0 { return add }
+        let scan = d.runHpStatus([
+            "scan", "--source", "platen", "--color", "color",
+            "--dpi", "300", "--format", "jpeg", "--output", output,
+        ])
+        if scan == 0 {
+            FileHandle.standardOutput.write(Data("gui-native-smoke-ok \(output)\n".utf8))
+        }
+        return scan
     }
 
     @discardableResult

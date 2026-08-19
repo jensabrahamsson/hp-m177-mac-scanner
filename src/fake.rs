@@ -18,6 +18,7 @@ use tiny_http::{Header, Method, Response, Server, StatusCode};
 pub struct FakeState {
     pub create_job_bodies: Vec<String>,
     pub last_create_job_xml: String,
+    pub last_wsd_create_xml: String,
     pub last_retrieve_xml: String,
     pub requests: Vec<String>,
     pub job_counter: u32,
@@ -71,6 +72,10 @@ impl FakeDevice {
         soap::parse_job_ticket(&self.last_create_job_xml())
     }
 
+    pub fn last_wsd_create_xml(&self) -> String {
+        self.state.lock().unwrap().last_wsd_create_xml.clone()
+    }
+
     pub fn request_log(&self) -> Vec<String> {
         self.state.lock().unwrap().requests.clone()
     }
@@ -82,6 +87,14 @@ pub struct FakeOptions {
     pub adf_pages: u32,
     pub escl_caps: bool,
     pub escl_jobs: bool,
+    /// SOAP CreateScanJob returns Error 4; WSD /scanner still works.
+    pub soap_create_fault: bool,
+    /// GetJobInfo returns a SOAP fault (must not spin).
+    pub get_job_info_fault: bool,
+    /// SOAP RetrieveImage has no image bytes.
+    pub retrieve_empty: bool,
+    /// GetScannerElements does not answer (probe falls through to WSD).
+    pub soap_dead: bool,
 }
 
 impl Default for FakeOptions {
@@ -91,6 +104,10 @@ impl Default for FakeOptions {
             adf_pages: 1,
             escl_caps: true,
             escl_jobs: false,
+            soap_create_fault: false,
+            get_job_info_fault: false,
+            retrieve_empty: false,
+            soap_dead: false,
         }
     }
 }
@@ -111,7 +128,7 @@ fn run_server(server: Server, state: Arc<Mutex<FakeState>>, opts: FakeOptions) {
             st.requests
                 .push(format!("{method:?} {url} {}", preview(&text)));
         }
-        let (status, ctype, payload) = handle(&method, &url, &text, &state, &opts);
+        let (status, ctype, payload) = handle(&method, &url, &text, &body, &state, &opts);
         let mut response = Response::new(
             StatusCode(status),
             Vec::new(),
@@ -130,9 +147,13 @@ fn handle(
     method: &Method,
     url: &str,
     body: &str,
+    _raw: &[u8],
     state: &Arc<Mutex<FakeState>>,
     opts: &FakeOptions,
 ) -> (u16, String, Vec<u8>) {
+    if url.contains("/scanner") || body.contains("wdp/scan") {
+        return handle_wsd(url, body, state);
+    }
     if url.starts_with("/eSCL/ScannerCapabilities") && *method == Method::Get {
         if opts.escl_caps {
             return (
@@ -171,6 +192,9 @@ fn handle(
 
     // SOAP — the live device accepts every method as POST / 
     if body.contains("GetScannerElements") {
+        if opts.soap_dead {
+            return (500, "text/plain".into(), b"soap wedged".to_vec());
+        }
         let mut xml = include_str!("../fixtures/live/soap-GetScannerElements.xml").to_string();
         let paper = if state.lock().unwrap().paper_in_adf {
             "true"
@@ -184,6 +208,14 @@ fn handle(
         return (202, "application/soap+xml; charset=utf-8".into(), xml.into_bytes());
     }
     if body.contains("CreateScanJob") {
+        if opts.soap_create_fault {
+            let fault = r#"<?xml version="1.0"?><SOAP-ENV:Envelope xmlns:SOAP-ENV="http://www.w3.org/2003/05/soap-envelope"><SOAP-ENV:Body><SOAP-ENV:Fault><SOAP-ENV:Code><SOAP-ENV:Value>SOAP-ENV:Sender</SOAP-ENV:Value></SOAP-ENV:Code><SOAP-ENV:Reason><SOAP-ENV:Text>Error 4</SOAP-ENV:Text></SOAP-ENV:Reason></SOAP-ENV:Fault></SOAP-ENV:Body></SOAP-ENV:Envelope>"#;
+            return (
+                500,
+                "application/soap+xml; charset=utf-8".into(),
+                fault.as_bytes().to_vec(),
+            );
+        }
         let ticket = soap::parse_job_ticket(body);
         let mut st = state.lock().unwrap();
         st.last_create_job_xml = body.to_string();
@@ -224,7 +256,17 @@ fn handle(
         return (200, "application/soap+xml; charset=utf-8".into(), xml.into_bytes());
     }
     if body.contains("GetJobInfo") {
-        let id = first_text(body, "jobId").unwrap_or_else(|| "1".into());
+        if opts.get_job_info_fault {
+            let fault = r#"<?xml version="1.0"?><SOAP-ENV:Envelope xmlns:SOAP-ENV="http://www.w3.org/2003/05/soap-envelope"><SOAP-ENV:Body><SOAP-ENV:Fault><SOAP-ENV:Code><SOAP-ENV:Value>SOAP-ENV:Sender</SOAP-ENV:Value></SOAP-ENV:Code><SOAP-ENV:Reason><SOAP-ENV:Text>GetJobInfo fault</SOAP-ENV:Text></SOAP-ENV:Reason></SOAP-ENV:Fault></SOAP-ENV:Body></SOAP-ENV:Envelope>"#;
+            return (
+                200,
+                "application/soap+xml; charset=utf-8".into(),
+                fault.as_bytes().to_vec(),
+            );
+        }
+        let id = first_text(body, "JobId")
+            .or_else(|| first_text(body, "jobId"))
+            .unwrap_or_else(|| "1".into());
         let xml = format!(
             r#"<?xml version="1.0" encoding="UTF-8"?>
 <SOAP-ENV:Envelope xmlns:SOAP-ENV="http://www.w3.org/2003/05/soap-envelope">
@@ -251,6 +293,13 @@ fn handle(
             );
         }
         st.adf_pages_remaining = st.adf_pages_remaining.saturating_sub(1);
+        if opts.retrieve_empty {
+            return (
+                200,
+                "application/dime".into(),
+                dime::wrap_soap_and_jpeg(soap::retrieve_image_soap_stub(), b""),
+            );
+        }
         let ticket = soap::parse_job_ticket(&st.last_create_job_xml).unwrap_or_default();
         let mut rgb = vec![0u8; 8 * 8 * 3];
         for i in 0..64 {
@@ -289,6 +338,62 @@ fn handle(
         404,
         "text/plain".into(),
         format!("unknown fake request {url}").into_bytes(),
+    )
+}
+
+fn handle_wsd(
+    url: &str,
+    body: &str,
+    state: &Arc<Mutex<FakeState>>,
+) -> (u16, String, Vec<u8>) {
+    if body.contains("CreateScanJob") {
+        let ticket = soap::parse_job_ticket(body);
+        let mut st = state.lock().unwrap();
+        st.last_wsd_create_xml = body.to_string();
+        st.last_create_job_xml = body.to_string();
+        st.create_job_bodies.push(body.to_string());
+        st.job_counter += 1;
+        let id = st.job_counter;
+        if let Some(t) = &ticket {
+            st.adf_pages_remaining = if t.source == crate::model::ScanSource::Adf {
+                if st.paper_in_adf {
+                    1
+                } else {
+                    0
+                }
+            } else {
+                1
+            };
+        } else {
+            st.adf_pages_remaining = 1;
+        }
+        let xml = format!(
+            r#"<?xml version="1.0"?><SOAP-ENV:Envelope xmlns:SOAP-ENV="http://www.w3.org/2003/05/soap-envelope" xmlns:wscn="http://schemas.microsoft.com/windows/2006/08/wdp/scan"><SOAP-ENV:Body><wscn:CreateScanJobResponse><wscn:JobId>{id}</wscn:JobId><wscn:JobToken>tok-{id}</wscn:JobToken></wscn:CreateScanJobResponse></SOAP-ENV:Body></SOAP-ENV:Envelope>"#
+        );
+        return (
+            200,
+            "application/soap+xml; charset=utf-8".into(),
+            xml.into_bytes(),
+        );
+    }
+    if body.contains("RetrieveImage") {
+        let bmp = crate::imagefmt::solid_bmp_bgra(2, 2, 0, 0, 255);
+        let mtom = crate::wsd::wrap_bmp_mtom(&bmp);
+        return (
+            200,
+            r#"multipart/related; type="application/xop+xml""#.into(),
+            mtom,
+        );
+    }
+    // Transfer Get / anything else: prove the service is alive.
+    let xml = format!(
+        r#"<?xml version="1.0"?><s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope" xmlns:wsa="http://schemas.xmlsoap.org/ws/2004/08/addressing"><s:Header><wsa:Action>http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous</wsa:Action></s:Header><s:Body><Envelope/></s:Body></s:Envelope>"#
+    );
+    let _ = url;
+    (
+        200,
+        "application/soap+xml; charset=utf-8".into(),
+        xml.into_bytes(),
     )
 }
 

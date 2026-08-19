@@ -267,3 +267,171 @@ fn soap_timeout_falls_back_to_wsd_dib() {
 fn platen_color_tiff_against_fake() {
     scan_combo(ScanSource::Platen, ColorMode::Color, OutputFormat::Tiff);
 }
+
+#[test]
+fn wsd_only_scan_against_listening_fake() {
+    use hp_m177::fake::FakeOptions;
+    use hp_m177::model::{ColorMode, DeviceRecord, JobProtocol, OutputFormat, ScanSource};
+    let fake = FakeDevice::start_with(FakeOptions {
+        soap_dead: true,
+        ..FakeOptions::default()
+    })
+    .unwrap();
+    let rec = DeviceRecord {
+        id: "w".into(),
+        name: "M177fw".into(),
+        host: fake.host(),
+        job: JobProtocol::Wsd { port: fake.port() },
+        has_escl_caps: true,
+        has_platen: true,
+        has_adf: true,
+        uuid: None,
+    };
+    let t = UreqTransport::default();
+    let req = ScanRequest {
+        source: ScanSource::Platen,
+        color: ColorMode::Color,
+        dpi: 300,
+        format: OutputFormat::Jpeg,
+        output: None,
+        region: None,
+    };
+    let out = scan(&t, &rec, &req).expect("WSD-only scan");
+    assert!(imagefmt::is_jpeg(&out.bytes));
+    let xml = fake.last_wsd_create_xml();
+    assert!(xml.contains("CreateScanJob"), "client sent WSD CreateScanJob");
+    assert!(xml.contains("dib"), "ticket format is dib");
+}
+
+#[test]
+fn add_by_address_selects_listening_wsd_when_soap_is_dead() {
+    use hp_m177::fake::FakeOptions;
+    let fake = FakeDevice::start_with(FakeOptions {
+        soap_dead: true,
+        ..FakeOptions::default()
+    })
+    .unwrap();
+    let mut store = Store::open(unique_home()).unwrap();
+    let t = UreqTransport::default();
+    let rec = add_by_address(
+        &mut store,
+        &t,
+        &fake.host(),
+        Some(fake.port()),
+        Some(fake.port()),
+    )
+    .expect("add via WSD");
+    match rec.job {
+        hp_m177::JobProtocol::Wsd { port } => assert_eq!(port, fake.port()),
+        other => panic!("expected WSD on fake port, got {other:?}"),
+    }
+}
+
+#[test]
+fn soap_create_fault_falls_back_to_listening_wsd() {
+    use hp_m177::fake::FakeOptions;
+    use hp_m177::model::{ColorMode, DeviceRecord, JobProtocol, OutputFormat, ScanSource};
+    let fake = FakeDevice::start_with(FakeOptions {
+        soap_create_fault: true,
+        ..FakeOptions::default()
+    })
+    .unwrap();
+    let rec = DeviceRecord {
+        id: "s".into(),
+        name: "M177fw".into(),
+        host: fake.host(),
+        job: JobProtocol::Soap { port: fake.port() },
+        has_escl_caps: true,
+        has_platen: true,
+        has_adf: true,
+        uuid: None,
+    };
+    let t = UreqTransport::default();
+    let req = ScanRequest {
+        source: ScanSource::Platen,
+        color: ColorMode::Color,
+        dpi: 300,
+        format: OutputFormat::Pdf,
+        output: None,
+        region: None,
+    };
+    let started = std::time::Instant::now();
+    let out = scan(&t, &rec, &req).expect("SOAP fault then WSD");
+    assert!(started.elapsed().as_secs() < 5, "must not spin on SOAP fault");
+    assert!(imagefmt::is_pdf(&out.bytes));
+    assert!(fake.last_wsd_create_xml().contains("dib"));
+}
+
+#[test]
+fn soap_empty_retrieve_falls_back_to_listening_wsd() {
+    use hp_m177::fake::FakeOptions;
+    use hp_m177::model::{ColorMode, DeviceRecord, JobProtocol, OutputFormat, ScanSource};
+    let fake = FakeDevice::start_with(FakeOptions {
+        retrieve_empty: true,
+        ..FakeOptions::default()
+    })
+    .unwrap();
+    let rec = DeviceRecord {
+        id: "e".into(),
+        name: "M177fw".into(),
+        host: fake.host(),
+        job: JobProtocol::Soap { port: fake.port() },
+        has_escl_caps: true,
+        has_platen: true,
+        has_adf: true,
+        uuid: None,
+    };
+    let t = UreqTransport::default();
+    let req = ScanRequest {
+        source: ScanSource::Platen,
+        color: ColorMode::Color,
+        dpi: 300,
+        format: OutputFormat::Jpeg,
+        output: None,
+        region: None,
+    };
+    let out = scan(&t, &rec, &req).expect("empty retrieve then WSD");
+    assert!(imagefmt::is_jpeg(&out.bytes));
+}
+
+#[test]
+fn get_job_info_fault_does_not_spin() {
+    use hp_m177::fake::FakeOptions;
+    use hp_m177::model::{ColorMode, DeviceRecord, JobProtocol, OutputFormat, ScanSource};
+    let fake = FakeDevice::start_with(FakeOptions {
+        get_job_info_fault: true,
+        ..FakeOptions::default()
+    })
+    .unwrap();
+    let rec = DeviceRecord {
+        id: "g".into(),
+        name: "M177fw".into(),
+        host: fake.host(),
+        job: JobProtocol::Soap { port: fake.port() },
+        has_escl_caps: true,
+        has_platen: true,
+        has_adf: true,
+        uuid: None,
+    };
+    let t = UreqTransport::default();
+    let req = ScanRequest {
+        source: ScanSource::Platen,
+        color: ColorMode::Color,
+        dpi: 300,
+        format: OutputFormat::Jpeg,
+        output: None,
+        region: None,
+    };
+    let started = std::time::Instant::now();
+    let out = scan(&t, &rec, &req);
+    assert!(started.elapsed().as_secs() < 5, "GetJobInfo fault must not wait 90s");
+    // Fault is Protocol; fallback to WSD should still produce an image.
+    assert!(imagefmt::is_jpeg(&out.expect("fallback after GetJobInfo fault").bytes));
+}
+
+#[test]
+fn live_get_job_info_fixture_parses() {
+    let xml = include_str!("../fixtures/live/soap-GetJobInfo.xml");
+    let info = hp_m177::soap::parse_job_info(xml).unwrap();
+    assert!(info.image_ready() || info.finished() || !info.job_id.is_empty());
+}

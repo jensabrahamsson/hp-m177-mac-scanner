@@ -227,3 +227,50 @@ fn bridge_binary_http_twice() {
         let _ = child.wait();
     }
 }
+
+#[test]
+fn facade_adf_status_and_scan_region() {
+    let fake = FakeDevice::start().unwrap();
+    let mut store = Store::open(home()).unwrap();
+    let t = UreqTransport::default();
+    let rec = add_by_address(
+        &mut store,
+        &t,
+        &fake.host(),
+        Some(fake.port()),
+        Some(fake.port()),
+    )
+    .unwrap();
+    let facade = EsclFacade::start(Some(rec)).unwrap();
+    let base = format!("{}/eSCL", facade.url());
+    facade.set_adf_loaded(true);
+    let loaded = t.get(&format!("{base}/ScannerStatus")).unwrap().text();
+    assert!(loaded.contains("ScannerAdfLoaded"), "{loaded}");
+    facade.set_adf_loaded(false);
+    let empty = t.get(&format!("{base}/ScannerStatus")).unwrap().text();
+    assert!(empty.contains("ScannerAdfEmpty"), "{empty}");
+
+    let req = hp_m177::ScanRequest {
+        source: hp_m177::ScanSource::Platen,
+        color: hp_m177::ColorMode::Color,
+        dpi: 300,
+        format: hp_m177::OutputFormat::Jpeg,
+        output: None,
+        region: Some(hp_m177::ScanRegion {
+            x: 100,
+            y: 200,
+            width: 3000,
+            height: 4000,
+        }),
+    };
+    let settings = escl::scan_settings_xml(&req);
+    assert!(settings.contains("ScanRegionWidth>3000"));
+    let created = t
+        .post(&format!("{base}/ScanJobs"), settings.as_bytes(), "text/xml")
+        .unwrap();
+    assert_eq!(created.status, 201, "{}", created.text());
+    let ticket = fake.last_ticket().expect("facade forwarded SOAP");
+    let region = ticket.region.expect("ScanRegion on backend ticket");
+    assert_eq!(region.width, 3000);
+    assert_eq!(region.x, 100);
+}

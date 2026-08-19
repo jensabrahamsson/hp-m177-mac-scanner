@@ -23,6 +23,7 @@ struct Job {
 struct Inner {
     jobs: HashMap<String, Job>,
     device: Option<DeviceRecord>,
+    adf_loaded: bool,
 }
 
 pub struct EsclFacade {
@@ -38,9 +39,11 @@ impl EsclFacade {
     pub fn bind(addr: &str, device: Option<DeviceRecord>) -> Result<Self> {
         let listener = TcpListener::bind(addr)?;
         let bound = listener.local_addr()?;
+        let adf_loaded = device.as_ref().map(|d| d.has_adf).unwrap_or(true);
         let inner = Arc::new(Mutex::new(Inner {
             jobs: HashMap::new(),
             device,
+            adf_loaded,
         }));
         let server = Server::from_listener(listener, None)
             .map_err(|e| Error::msg(format!("eSCL facade listen: {e}")))?;
@@ -53,7 +56,13 @@ impl EsclFacade {
     }
 
     pub fn set_device(&self, device: DeviceRecord) {
-        self.inner.lock().unwrap().device = Some(device);
+        let mut g = self.inner.lock().unwrap();
+        g.adf_loaded = device.has_adf;
+        g.device = Some(device);
+    }
+
+    pub fn set_adf_loaded(&self, loaded: bool) {
+        self.inner.lock().unwrap().adf_loaded = loaded;
     }
 
     pub fn url(&self) -> String {
@@ -128,7 +137,8 @@ fn dispatch(
                 )
             })
             .collect();
-        let xml = escl::status_xml(true, &jobs);
+        let adf_empty = !inner.lock().unwrap().adf_loaded;
+        let xml = escl::status_xml(adf_empty, &jobs);
         return (200, "text/xml; charset=utf-8".into(), xml.into_bytes(), vec![]);
     }
     if *method == Method::Post && (path == "/eSCL/ScanJobs" || path == "/ScanJobs") {

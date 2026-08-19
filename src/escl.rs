@@ -163,7 +163,23 @@ pub fn parse_scan_settings(xml: &str) -> Result<ScanRequest> {
         dpi,
         format,
         output: None,
-        region: None,
+        region: {
+            let x = first_text(xml, "ScanRegionXOffset").and_then(|s| s.parse().ok());
+            let y = first_text(xml, "ScanRegionYOffset").and_then(|s| s.parse().ok());
+            let w = first_text(xml, "ScanRegionWidth").and_then(|s| s.parse().ok());
+            let h = first_text(xml, "ScanRegionHeight").and_then(|s| s.parse().ok());
+            match (x, y, w, h) {
+                (Some(x), Some(y), Some(width), Some(height)) if width > 0 && height > 0 => {
+                    Some(crate::model::ScanRegion {
+                        x,
+                        y,
+                        width,
+                        height,
+                    })
+                }
+                _ => None,
+            }
+        },
     })
 }
 
@@ -179,12 +195,19 @@ pub fn scan_settings_xml(req: &ScanRequest) -> String {
   <scan:YResolution>{dpi}</scan:YResolution>
   <pwg:DocumentFormat>{fmt}</pwg:DocumentFormat>
   <scan:DocumentFormatExt>{fmt}</scan:DocumentFormatExt>
-</scan:ScanSettings>
+{region}</scan:ScanSettings>
 "#,
         src = req.source.escl_name(),
         color = req.color.escl_name(),
         dpi = req.dpi,
-        fmt = req.format.mime()
+        fmt = req.format.mime(),
+        region = match req.region {
+            Some(r) => format!(
+                "  <scan:ScanRegion>\n    <scan:ScanRegionXOffset>{}</scan:ScanRegionXOffset>\n    <scan:ScanRegionYOffset>{}</scan:ScanRegionYOffset>\n    <scan:ScanRegionWidth>{}</scan:ScanRegionWidth>\n    <scan:ScanRegionHeight>{}</scan:ScanRegionHeight>\n  </scan:ScanRegion>\n",
+                r.x, r.y, r.width, r.height
+            ),
+            None => String::new(),
+        }
     )
 }
 
@@ -247,6 +270,16 @@ mod tests {
         assert_eq!(parsed.color, ColorMode::Gray);
         assert_eq!(parsed.dpi, 300);
         assert_eq!(parsed.format, OutputFormat::Pdf);
+        assert!(parsed.region.is_none());
+        let mut cropped = req;
+        cropped.region = Some(crate::model::ScanRegion {
+            x: 100,
+            y: 200,
+            width: 3000,
+            height: 4000,
+        });
+        let again = parse_scan_settings(&scan_settings_xml(&cropped)).unwrap();
+        assert_eq!(again.region.unwrap().width, 3000);
     }
 
     #[test]

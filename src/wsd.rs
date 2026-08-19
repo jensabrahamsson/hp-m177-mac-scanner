@@ -143,6 +143,24 @@ pub fn extract_image(body: &[u8]) -> Result<Vec<u8>> {
     ))
 }
 
+/// MTOM/XOP body the live M177fw returns for RetrieveImage.
+pub fn wrap_bmp_mtom(bmp: &[u8]) -> Vec<u8> {
+    let boundary = b"==hp-m177-wsd";
+    let mut out = Vec::new();
+    out.extend_from_slice(b"--");
+    out.extend_from_slice(boundary);
+    out.extend_from_slice(b"\r\nContent-Type: application/xop+xml\r\n\r\n");
+    out.extend_from_slice(br#"<?xml version="1.0"?><SOAP-ENV:Envelope xmlns:SOAP-ENV="http://www.w3.org/2003/05/soap-envelope"><SOAP-ENV:Body><RetrieveImageResponse/></SOAP-ENV:Body></SOAP-ENV:Envelope>"#);
+    out.extend_from_slice(b"\r\n--");
+    out.extend_from_slice(boundary);
+    out.extend_from_slice(b"\r\nContent-Type: image/bmp\r\n\r\n");
+    out.extend_from_slice(bmp);
+    out.extend_from_slice(b"\r\n--");
+    out.extend_from_slice(boundary);
+    out.extend_from_slice(b"--\r\n");
+    out
+}
+
 fn clip_bmp(bytes: &[u8]) -> Result<Vec<u8>> {
     if imagefmt::is_dib(bytes) && !imagefmt::is_bmp(bytes) {
         return Ok(bytes.to_vec());

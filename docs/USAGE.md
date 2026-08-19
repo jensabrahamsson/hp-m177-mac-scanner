@@ -122,8 +122,16 @@ To rebuild only the Swift binary without installing the `.app`:
 
 ## `hp-m177-fake`
 
-Developer stand-in for the MFP. Prints the bound address, then serves SOAP
-and eSCL capabilities until killed.
+Developer stand-in for the MFP. Prints the bound address, then serves SOAP,
+WSD `/scanner` (`dib` / MTOM BMP), and eSCL capabilities until killed.
+
+```
+hp-m177-fake
+hp-m177-fake --adf-empty
+```
+
+`--adf-empty` reports no paper in the ADF (RetrieveImage returns the empty-ADF
+fault).
 
 ## Adding the scanner in System Settings
 

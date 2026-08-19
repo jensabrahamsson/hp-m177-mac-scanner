@@ -52,16 +52,21 @@ pub fn probe_host_ports(
         Err(_) => None,
     };
 
-    let wsd_ok = wsd_alive(transport, &host, DEFAULT_WSD_PORT);
+    let wsd_port = if wsd_alive(transport, &host, soap_port) {
+        soap_port
+    } else {
+        DEFAULT_WSD_PORT
+    };
+    let wsd_ok = wsd_alive(transport, &host, wsd_port);
 
     let preferred = if escl_jobs {
         Some(JobProtocol::Escl { port: escl_port })
     } else if soap.is_some() {
         Some(JobProtocol::Soap { port: soap_port })
-    } else if wsd_ok || escl_caps {
-        // Live M177fw: eSCL caps exist, ScanJobs 404. SOAP 8289 may be
-        // wedged; WSD 3911 still returns dib images.
-        Some(JobProtocol::Wsd { port: DEFAULT_WSD_PORT })
+    } else if wsd_ok {
+        Some(JobProtocol::Wsd { port: wsd_port })
+    } else if escl_caps {
+        Some(JobProtocol::Wsd { port: wsd_port })
     } else {
         None
     };

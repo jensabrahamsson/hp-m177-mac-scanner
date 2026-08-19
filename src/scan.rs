@@ -14,8 +14,11 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 const SOAP_FAST_TIMEOUT: Duration = Duration::from_secs(8);
-const WSD_CREATE_TIMEOUT: Duration = Duration::from_secs(40);
-const WSD_RETRIEVE_TIMEOUT: Duration = Duration::from_secs(180);
+const SOAP_JOBINFO_TIMEOUT: Duration = Duration::from_secs(4);
+const SOAP_JOBINFO_DEADLINE: Duration = Duration::from_secs(8);
+const SOAP_RETRIEVE_TIMEOUT: Duration = Duration::from_secs(8);
+const WSD_CREATE_TIMEOUT: Duration = Duration::from_secs(8);
+const WSD_RETRIEVE_TIMEOUT: Duration = Duration::from_secs(15);
 
 pub fn scan(
     transport: &dyn Transport,
@@ -27,13 +30,13 @@ pub fn scan(
         JobProtocol::Soap { port } => match soap_scan(transport, &device.host, *port, req) {
             Ok(out) => Ok(out),
             Err(Error::AdfEmpty) => Err(Error::AdfEmpty),
-            Err(e) if should_fallback_to_wsd(&e) => {
-                wsd_scan(transport, &device.host, DEFAULT_WSD_PORT, req).map_err(|w| {
-                    Error::msg(format!(
-                        "SOAP on :{port} failed ({e}); WSD on :{DEFAULT_WSD_PORT} failed ({w})"
-                    ))
-                })
-            }
+            Err(e) if should_fallback_to_wsd(&e) => wsd_after_soap(
+                transport,
+                &device.host,
+                *port,
+                req,
+                e,
+            ),
             Err(e) => Err(e),
         },
         JobProtocol::Escl { port } => escl_scan(transport, &device.host, *port, req),
@@ -43,16 +46,39 @@ pub fn scan(
 
 fn should_fallback_to_wsd(e: &Error) -> bool {
     match e {
-        Error::Transport { .. } | Error::Timeout(_) => true,
+        Error::AdfEmpty | Error::InvalidRequest(_) => false,
+        Error::Transport { .. } | Error::Timeout(_) | Error::Http { .. } => true,
         Error::Protocol(msg) => {
             let n = msg.to_ascii_lowercase();
             n.contains("error 4")
+                || n.contains("error 13")
+                || n.contains("error ")
                 || n.contains("tag_mismatch")
                 || n.contains("tag mismatch")
                 || n.contains("documentformatnotsupported")
+                || n.contains("no image")
+                || n.contains("retrieveimage")
+                || n.contains("fault")
+                || n.contains("http ")
         }
-        Error::Http { .. } => true,
         _ => false,
+    }
+}
+
+fn wsd_after_soap(
+    transport: &dyn Transport,
+    host: &str,
+    soap_port: u16,
+    req: &ScanRequest,
+    soap_err: Error,
+) -> Result<ScanOutput> {
+    match wsd_scan(transport, host, soap_port, req) {
+        Ok(out) => Ok(out),
+        Err(_) => wsd_scan(transport, host, DEFAULT_WSD_PORT, req).map_err(|w| {
+            Error::msg(format!(
+                "SOAP on :{soap_port} failed ({soap_err}); WSD failed ({w})"
+            ))
+        }),
     }
 }
 
@@ -110,54 +136,64 @@ fn create_job(
     req: &ScanRequest,
     scan_id: &str,
 ) -> Result<soap::CreatedJob> {
-    let primary = soap::create_scan_job_xml(req, scan_id);
-    match post_xml_timeout(transport, url, primary.as_bytes(), SOAP_FAST_TIMEOUT) {
-        Ok(body) => match soap::parse_create_job(&body) {
-            Ok(job) => return Ok(job),
-            Err(first) => {
-                let fallback = soap::create_scan_job_short_xml(req, scan_id);
-                if let Ok(body) =
-                    post_xml_timeout(transport, url, fallback.as_bytes(), SOAP_FAST_TIMEOUT)
-                {
-                    if let Ok(job) = soap::parse_create_job(&body) {
-                        return Ok(job);
-                    }
+    let post = |xml: String| {
+        transport.execute(
+            HttpRequest::post(url, xml.into_bytes(), soap::SOAP_CONTENT_TYPE)
+                .with_timeout(SOAP_FAST_TIMEOUT),
+        )
+    };
+    let parse_or_detail = |r: crate::transport::HttpResponse| soap::parse_create_job(&r.text());
+    match post(soap::create_scan_job_xml(req, scan_id)) {
+        Ok(r) => match parse_or_detail(r) {
+            Ok(job) => Ok(job),
+            Err(first) => match post(soap::create_scan_job_short_xml(req, scan_id)) {
+                Ok(r2) => soap::parse_create_job(&r2.text()).or(Err(first)),
+                Err(Error::Http { detail, .. }) => {
+                    soap::parse_create_job(&detail).or(Err(first))
                 }
-                return Err(first);
-            }
+                Err(_) => Err(first),
+            },
         },
-        Err(Error::Http { status, .. }) if status == 400 || status == 500 => {
-            let fallback = soap::create_scan_job_short_xml(req, scan_id);
-            let body = post_xml_timeout(transport, url, fallback.as_bytes(), SOAP_FAST_TIMEOUT)?;
-            soap::parse_create_job(&body)
+        Err(Error::Http { status, detail, .. }) if status == 400 || status == 500 => {
+            if let Ok(job) = soap::parse_create_job(&detail) {
+                return Ok(job);
+            }
+            match post(soap::create_scan_job_short_xml(req, scan_id)) {
+                Ok(r) => soap::parse_create_job(&r.text()),
+                Err(Error::Http { detail: d2, .. }) => soap::parse_create_job(&d2),
+                Err(e) => Err(e),
+            }
         }
         Err(e) => Err(e),
     }
 }
 
 fn wait_for_job(transport: &dyn Transport, url: &str, job_id: &str) -> Result<()> {
-    let deadline = Instant::now() + Duration::from_secs(90);
+    let deadline = Instant::now() + SOAP_JOBINFO_DEADLINE;
     let mut last = String::new();
     while Instant::now() < deadline {
         let xml = soap::get_job_info_xml(job_id);
-        match post_xml(transport, url, xml.as_bytes()) {
+        match post_xml_timeout(transport, url, xml.as_bytes(), SOAP_JOBINFO_TIMEOUT) {
             Ok(body) => {
                 last = body.clone();
+                if let Some(fault) = soap::soap_fault(&body) {
+                    return Err(Error::protocol(fault));
+                }
                 if let Ok(info) = soap::parse_job_info(&body) {
                     if info.image_ready() || info.finished() {
                         return Ok(());
                     }
+                } else {
+                    // Unparseable and not a fault: skip ahead to RetrieveImage.
+                    return Ok(());
                 }
             }
-            Err(Error::Http { .. }) => {
-                // Some firmware skips GetJobInfo; proceed to retrieve.
-                return Ok(());
-            }
+            Err(Error::Http { .. }) => return Ok(()),
             Err(e) => return Err(e),
         }
-        thread::sleep(Duration::from_millis(150));
+        thread::sleep(Duration::from_millis(50));
     }
-    Err(Error::Timeout(Duration::from_secs(90)).or_context(&last))
+    Err(Error::Timeout(SOAP_JOBINFO_DEADLINE).or_context(&last))
 }
 
 trait OrContext {
@@ -181,11 +217,10 @@ fn retrieve(
     token: &str,
 ) -> Result<Vec<u8>> {
     let xml = soap::retrieve_image_xml(job_id, token);
-    let resp = match transport.post(url, xml.as_bytes(), soap::SOAP_CONTENT_TYPE) {
+    let req = HttpRequest::post(url, xml.into_bytes(), soap::SOAP_CONTENT_TYPE)
+        .with_timeout(SOAP_RETRIEVE_TIMEOUT);
+    let resp = match transport.execute(req) {
         Ok(r) => r,
-        Err(Error::Http { status, detail, .. }) => {
-            return Err(Error::protocol(format!("HTTP {status}: {detail}")));
-        }
         Err(e) => return Err(e),
     };
     if resp.body.starts_with(b"%PDF") || imagefmt::is_jpeg(&resp.body) {
@@ -369,10 +404,9 @@ fn wsd_scan(
         Err(Error::Http { detail, .. }) => soap::parse_create_job(&detail)?,
         Err(e) => return Err(e),
     };
-    thread::sleep(Duration::from_millis(400));
     let retrieve_xml = wsd::retrieve_image_xml(&url, &created.job_id, &created.job_token);
     let mut last = None;
-    for _ in 0..8 {
+    for _ in 0..2 {
         match transport.execute(wsd::request(
             &url,
             wsd::ACTION_RETRIEVE,
@@ -389,11 +423,11 @@ fn wsd_scan(
                     return Err(Error::AdfEmpty);
                 }
                 last = Some(detail);
-                thread::sleep(Duration::from_millis(400));
+                thread::sleep(Duration::from_millis(50));
             }
             Err(Error::Http { detail, .. }) => {
                 last = Some(detail);
-                thread::sleep(Duration::from_millis(400));
+                thread::sleep(Duration::from_millis(50));
             }
             Err(e) => return Err(e),
         }
