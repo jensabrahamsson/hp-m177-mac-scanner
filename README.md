@@ -40,10 +40,13 @@ install a kernel extension / ICA plugin.
 
 ## Install
 
-Requires a Rust toolchain (1.74+).
+Requires Rust **1.82 or newer**. `cargo install` without `--locked` can
+otherwise pull clap 4.6, which needs edition 2024 (Cargo 1.85+). If `cargo
+--version` is older than 1.82, run `rustup update` (or upgrade the Homebrew
+`rust` formula).
 
 ```bash
-cargo install --path .
+cargo install --path . --locked
 ```
 
 That puts `hp-m177`, `hp-m177-bridge`, `hp-m177-gui`, and `hp-m177-fake` on
