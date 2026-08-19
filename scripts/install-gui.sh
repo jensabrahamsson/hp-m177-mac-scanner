@@ -11,11 +11,9 @@ APP_DIR="${HOME}/Applications/HP M177 Scanner.app"
 MACOS="${APP_DIR}/Contents/MacOS"
 RES="${APP_DIR}/Contents/Resources"
 
-if ! command -v hp-m177 >/dev/null 2>&1 && [ ! -x "${BIN_DIR}/hp-m177" ]; then
-  echo "hp-m177 is not installed. Run: cargo install --path . --locked" >&2
-  exit 1
-fi
-
+# Always install the CLI from this tree. Copying an older ~/.cargo/bin
+# hp-m177 left the GUI talking to a binary without WSD fallback.
+cargo install --path . --locked --force
 ./scripts/build-gui.sh
 
 mkdir -p "${BIN_DIR}" "${MACOS}" "${RES}"
@@ -64,7 +62,7 @@ cat > "${APP_DIR}/Contents/Info.plist" <<'PLIST'
   <key>CFBundleDisplayName</key><string>HP M177 Scanner</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>0.1.0</string>
-  <key>CFBundleVersion</key><string>5</string>
+  <key>CFBundleVersion</key><string>6</string>
   <key>LSMinimumSystemVersion</key><string>12.0</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>NSHighResolutionCapable</key><true/>

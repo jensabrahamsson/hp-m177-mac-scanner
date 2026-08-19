@@ -15,10 +15,12 @@ use std::time::{Duration, Instant};
 
 const SOAP_FAST_TIMEOUT: Duration = Duration::from_secs(8);
 const SOAP_JOBINFO_TIMEOUT: Duration = Duration::from_secs(4);
-const SOAP_JOBINFO_DEADLINE: Duration = Duration::from_secs(8);
-const SOAP_RETRIEVE_TIMEOUT: Duration = Duration::from_secs(8);
+const SOAP_JOBINFO_DEADLINE: Duration = Duration::from_secs(20);
+const SOAP_RETRIEVE_TIMEOUT: Duration = Duration::from_secs(20);
 const WSD_CREATE_TIMEOUT: Duration = Duration::from_secs(8);
-const WSD_RETRIEVE_TIMEOUT: Duration = Duration::from_secs(15);
+const WSD_RETRIEVE_TIMEOUT: Duration = Duration::from_secs(90);
+const SOAP_BUSY_RETRIES: u32 = 3;
+const SOAP_BUSY_WAIT: Duration = Duration::from_millis(800);
 
 pub fn scan(
     transport: &dyn Transport,
@@ -97,9 +99,9 @@ fn soap_scan(
             }
         }
     }
+    wait_until_idle(transport, host, port);
     let url = format!("http://{host}:{port}/");
-    let scan_id = uuid::Uuid::new_v4().to_string();
-    let created = create_job(transport, &url, req, &scan_id)?;
+    let created = create_job_retrying(transport, &url, req)?;
     wait_for_job(transport, &url, &created.job_id)?;
     let mut pages: Vec<Vec<u8>> = Vec::new();
     loop {
@@ -127,7 +129,60 @@ fn soap_scan(
         }
         return Err(Error::protocol("RetrieveImage returned no image data"));
     }
+    let _ = cancel_job(transport, &url, &created.job_id);
     finalize(pages, req)
+}
+
+fn wait_until_idle(transport: &dyn Transport, host: &str, port: u16) {
+    let deadline = Instant::now() + Duration::from_secs(6);
+    loop {
+        if let Ok(caps) = fetch_caps(transport, host, port) {
+            if caps.state.eq_ignore_ascii_case("idle") {
+                return;
+            }
+        }
+        if Instant::now() >= deadline {
+            return;
+        }
+        thread::sleep(Duration::from_millis(250));
+    }
+}
+
+fn is_device_busy(e: &Error) -> bool {
+    let n = e.to_string().to_ascii_lowercase();
+    n.contains("error 13")
+        || n.contains("busy")
+        || n.contains("in use")
+        || n.contains("job already")
+        || n.contains("device not ready")
+}
+
+fn create_job_retrying(
+    transport: &dyn Transport,
+    url: &str,
+    req: &ScanRequest,
+) -> Result<soap::CreatedJob> {
+    let mut last = Error::protocol("CreateScanJob failed");
+    for attempt in 0..SOAP_BUSY_RETRIES {
+        let scan_id = uuid::Uuid::new_v4().to_string();
+        match create_job(transport, url, req, &scan_id) {
+            Ok(job) => return Ok(job),
+            Err(e) if is_device_busy(&e) && attempt + 1 < SOAP_BUSY_RETRIES => {
+                last = e;
+                thread::sleep(SOAP_BUSY_WAIT);
+            }
+            Err(e) => return Err(e),
+        }
+    }
+    Err(last)
+}
+
+fn cancel_job(transport: &dyn Transport, url: &str, job_id: &str) -> Result<()> {
+    let xml = soap::cancel_job_xml(job_id);
+    let req = HttpRequest::post(url, xml.into_bytes(), soap::SOAP_CONTENT_TYPE)
+        .with_timeout(Duration::from_secs(3));
+    let _ = transport.execute(req);
+    Ok(())
 }
 
 fn create_job(

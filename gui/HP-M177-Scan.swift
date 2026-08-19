@@ -9,6 +9,7 @@ import Foundation
 /// Headless:
 ///   HP-M177-Scan --exec add --host 192.168.50.14
 ///   HP-M177-Scan --exec scan --source platen --color color --dpi 300 --format jpeg --output ~/Documents/scan.jpg
+///   HP-M177-Scan --button-smoke --host 127.0.0.1:PORT --output /tmp/gui.jpg
 
 let args = CommandLine.arguments
 if args.contains("--smoke") {
@@ -25,12 +26,32 @@ app.setActivationPolicy(.regular)
 app.delegate = delegate
 app.run()
 
-/// All chrome is painted in this view's draw(_:). NSButton/NSStackView cells
-/// previously had frames but never appeared in the window backing store.
+/// Transparent click target so painted chrome receives mouse events even
+/// when sibling controls sit in the same window.
+final class HitTarget: NSView {
+    var key: String = ""
+    weak var owner: RootView?
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override var isFlipped: Bool { false }
+
+    override func mouseDown(with event: NSEvent) {
+        owner?.beginPress(key)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        let p = convert(event.locationInWindow, from: nil)
+        owner?.endPress(key, inside: bounds.contains(p))
+    }
+}
+
+/// All chrome is painted in this view's draw(_:). NSButton cells previously
+/// had frames but never appeared in the window backing store.
 final class RootView: NSView {
     weak var app: AppDelegate!
     var frames: [String: NSRect] = [:]
     var press: String?
+    var hits: [String: HitTarget] = [:]
 
     override var isFlipped: Bool { false }
     override var isOpaque: Bool { true }
@@ -43,7 +64,7 @@ final class RootView: NSView {
 
     func layoutChrome() {
         let b = bounds
-        guard b.width > 80, b.height > 80 else { return }
+        guard b.width > 80, b.height > 80, app != nil else { return }
         let logH: CGFloat = 110
         let topH: CGFloat = 32
         let topY = b.height - 12 - topH
@@ -86,6 +107,24 @@ final class RootView: NSView {
             height: max(previewTop - previewY, 200)
         )
         app.scroll.frame = NSRect(x: 16, y: 12, width: b.width - 32, height: logH)
+
+        for key in ["discover", "add", "preview", "scan", "addPrinter", "source", "color", "dpi", "format"] {
+            if let r = frames[key] { ensureHit(key, r) }
+        }
+    }
+
+    func ensureHit(_ key: String, _ r: NSRect) {
+        let v: HitTarget
+        if let existing = hits[key] {
+            v = existing
+        } else {
+            v = HitTarget()
+            v.key = key
+            v.owner = self
+            addSubview(v, positioned: .above, relativeTo: nil)
+            hits[key] = v
+        }
+        v.frame = r
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -111,10 +150,15 @@ final class RootView: NSView {
         guard let r = frames[key] else { return }
         let path = NSBezierPath(roundedRect: r.insetBy(dx: 0.5, dy: 0.5), xRadius: 6, yRadius: 6)
         let pressed = press == key
-        // Calibrated sRGB so offscreen layout-check and both appearances stay blue.
-        let fill = pressed
-            ? NSColor(srgbRed: 0.05, green: 0.28, blue: 0.70, alpha: 1)
-            : NSColor(srgbRed: 0.10, green: 0.45, blue: 0.95, alpha: 1)
+        let disabled = app?.busy == true
+        let fill: NSColor
+        if disabled {
+            fill = NSColor(srgbRed: 0.45, green: 0.55, blue: 0.70, alpha: 1)
+        } else if pressed {
+            fill = NSColor(srgbRed: 0.05, green: 0.28, blue: 0.70, alpha: 1)
+        } else {
+            fill = NSColor(srgbRed: 0.10, green: 0.45, blue: 0.95, alpha: 1)
+        }
         fill.setFill()
         path.fill()
         NSColor.white.setStroke()
@@ -133,11 +177,14 @@ final class RootView: NSView {
 
     func drawLabel(_ text: String, key: String, bold: Bool = false, secondary: Bool = false) {
         guard let r = frames[key] else { return }
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineBreakMode = .byWordWrapping
         let attrs: [NSAttributedString.Key: Any] = [
             .font: bold ? NSFont.boldSystemFont(ofSize: 13) : NSFont.systemFont(ofSize: 12),
             .foregroundColor: secondary ? NSColor.secondaryLabelColor : NSColor.labelColor,
+            .paragraphStyle: paragraph,
         ]
-        text.draw(at: NSPoint(x: r.minX, y: r.minY + 2), withAttributes: attrs)
+        text.draw(in: r, withAttributes: attrs)
     }
 
     func drawCycle(caption: String, value: String, key: String) {
@@ -154,7 +201,7 @@ final class RootView: NSView {
         ]
         let valAttrs: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 13, weight: .medium),
-            .foregroundColor: NSColor.labelColor,
+            .foregroundColor: NSColor(srgbRed: 0.10, green: 0.10, blue: 0.12, alpha: 1),
         ]
         caption.draw(at: NSPoint(x: r.minX + 8, y: r.midY - 7), withAttributes: capAttrs)
         let val = "\(value)  ▾"
@@ -162,18 +209,21 @@ final class RootView: NSView {
         val.draw(at: NSPoint(x: r.maxX - size.width - 8, y: r.midY - 8), withAttributes: valAttrs)
     }
 
-    override func mouseDown(with event: NSEvent) {
-        let p = convert(event.locationInWindow, from: nil)
-        press = frames.first(where: { $0.value.contains(p) })?.key
+    func beginPress(_ key: String) {
+        guard app?.busy != true else { return }
+        press = key
         needsDisplay = true
     }
 
-    override func mouseUp(with event: NSEvent) {
-        let p = convert(event.locationInWindow, from: nil)
-        let key = press
+    func endPress(_ key: String, inside: Bool) {
         press = nil
         needsDisplay = true
-        guard let key, let r = frames[key], r.contains(p) else { return }
+        guard inside else { return }
+        activate(key)
+    }
+
+    func activate(_ key: String) {
+        guard let app else { return }
         switch key {
         case "discover": app.discoverLan()
         case "add": app.addScanner()
@@ -301,10 +351,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     let scroll = NSScrollView()
     var source = "platen"
     var color = "color"
-    var dpi = "300"
+    var dpi = "100"
     var format = "jpeg"
     var statusText = "Add the scanner by IP or hostname, then Preview or Scan."
     var lastExit: Int32 = 0
+    var busy = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         window = NSWindow(
@@ -323,6 +374,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         styleField(hostField)
         hostField.placeholderString = "192.168.50.14 or DEV26BA77.local"
         hostField.stringValue = "192.168.50.14"
+        hostField.target = self
+        hostField.action = #selector(addScanner)
         styleField(outputField)
         outputField.stringValue = Self.defaultDocumentsPath(ext: "jpg")
         outputField.placeholderString = "~/Documents/scan-<timestamp>.jpg"
@@ -345,10 +398,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         root.addSubview(preview)
         root.addSubview(scroll)
         root.layoutChrome()
+        appendLog("Using \(hpBinary())\n")
 
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self else { return event }
             if event.keyCode == 36 {
+                let resp = self.window?.firstResponder
+                if resp is NSTextView || resp is NSTextField {
+                    return event
+                }
                 self.runScan()
                 return nil
             }
@@ -357,6 +415,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         if CommandLine.arguments.contains("--layout-check") {
             exit(runLayoutCheck())
+        }
+        if CommandLine.arguments.contains("--button-smoke") {
+            exit(runButtonSmoke())
         }
 
         window.makeKeyAndOrderFront(nil)
@@ -418,7 +479,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 gc.cgContext.translateBy(x: 0, y: CGFloat(pxH))
                 gc.cgContext.scaleBy(x: scale, y: -scale)
                 root.draw(root.bounds)
-                for v in root.subviews {
+                for v in root.subviews where !(v is HitTarget) {
                     gc.cgContext.saveGState()
                     gc.cgContext.translateBy(x: v.frame.minX, y: v.frame.minY)
                     v.draw(v.bounds)
@@ -426,8 +487,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 }
             }
             NSGraphicsContext.restoreGraphicsState()
-            // Offscreen CGContext y is flipped vs view frames; count accent
-            // pixels anywhere rather than mapping view-y onto the bitmap.
             var y = 0
             while y < rep.pixelsHigh {
                 var x = 0
@@ -458,10 +517,48 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             && scan.minY > topBand
             && disc.minY > topBand
             && painted >= 30
+            && root.hits["scan"] != nil
+            && root.hits["discover"] != nil
         if !ok {
             fputs("layout-check failed (buttons missing or not drawn)\n", stderr)
         }
         return ok ? 0 : 1
+    }
+
+    /// Same path as clicking Add, Preview, then Scan in the window.
+    func runButtonSmoke() -> Int32 {
+        var host = ""
+        var output = Self.defaultDocumentsPath(ext: "jpg")
+        let argv = CommandLine.arguments
+        var i = 0
+        while i < argv.count {
+            if argv[i] == "--host", i + 1 < argv.count { host = argv[i + 1] }
+            if argv[i] == "--output", i + 1 < argv.count { output = argv[i + 1] }
+            i += 1
+        }
+        if host.isEmpty {
+            fputs("hp-m177-gui --button-smoke needs --host\n", stderr)
+            return 2
+        }
+        root.layoutChrome()
+        hostField.stringValue = host
+        outputField.stringValue = output
+        root.activate("add")
+        if lastExit != 0 { return lastExit }
+        root.activate("preview")
+        if lastExit != 0 { return lastExit }
+        if preview.image == nil {
+            fputs("button-smoke: preview produced no image\n", stderr)
+            return 1
+        }
+        root.activate("scan")
+        if lastExit != 0 { return lastExit }
+        if !FileManager.default.isReadableFile(atPath: output) {
+            fputs("button-smoke: missing output \(output)\n", stderr)
+            return 1
+        }
+        FileHandle.standardOutput.write(Data("gui-button-smoke-ok \(output)\n".utf8))
+        return 0
     }
 
     @objc func formatChanged() {
@@ -568,35 +665,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     @discardableResult
     func runHpStatus(_ args: [String]) -> Int32 {
-        runHp(args)
-        return lastExit
+        let (code, text) = spawnHp(args)
+        lastExit = code
+        if !text.isEmpty {
+            FileHandle.standardOutput.write(Data(text.utf8))
+        }
+        return code
     }
 
     @objc func addScanner() {
         let host = hostField.stringValue.trimmingCharacters(in: .whitespaces)
-        guard !host.isEmpty else { return }
-        runHp(["add", host])
+        guard !host.isEmpty else {
+            statusText = "Enter a host or IP first."
+            root?.needsDisplay = true
+            return
+        }
+        runHpAsync(["add", host])
     }
 
     @objc func discoverLan() {
-        runHp(["discover", "--timeout", "3"])
+        runHpAsync(["discover", "--timeout", "3"])
     }
 
     @objc func runPreview() {
         let dest = NSTemporaryDirectory() + "hp-m177-preview.jpg"
-        runHp([
+        runHpAsync([
             "scan",
             "--source", source,
             "--color", color,
             "--dpi", "100",
             "--format", "jpeg",
             "--output", dest,
-        ])
-        if lastExit == 0, let img = NSImage(contentsOfFile: dest) {
-            preview.image = img
-            preview.selection = nil
-            statusText = "Preview ready. Drag a rectangle, then Scan."
-            root?.needsDisplay = true
+        ]) { [weak self] code, _ in
+            guard let self else { return }
+            if code == 0, let img = NSImage(contentsOfFile: dest) {
+                self.preview.image = img
+                self.preview.selection = nil
+                self.statusText = "Preview ready. Drag a rectangle, then Scan."
+                self.root?.needsDisplay = true
+            }
         }
     }
 
@@ -615,9 +722,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if let region = regionThousandths() {
             args += ["--region", region]
         }
-        runHp(args)
-        if lastExit == 0, let img = NSImage(contentsOfFile: out) {
-            preview.image = img
+        runHpAsync(args) { [weak self] code, _ in
+            guard let self else { return }
+            if code == 0, !out.isEmpty, let img = NSImage(contentsOfFile: out) {
+                self.preview.image = img
+            }
         }
     }
 
@@ -639,15 +748,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         var args = ["add-printer"]
         let host = hostField.stringValue.trimmingCharacters(in: .whitespaces)
         if !host.isEmpty { args.append(host) }
-        runHp(args)
+        runHpAsync(args)
     }
 
-    func runHp(_ args: [String]) {
-        let bin = ProcessInfo.processInfo.environment["HP_M177_BIN"]
-            ?? bundledBinary()
-            ?? "hp-m177"
-        statusText = "Running \(args.joined(separator: " "))…"
+    /// Interactive buttons: do not block the run loop. `--exec` / smoke stay
+    /// on spawnHp so they can wait for the process.
+    func runHpAsync(_ args: [String], done: ((Int32, String) -> Void)? = nil) {
+        if CommandLine.arguments.contains("--button-smoke") {
+            let code = runHpStatus(args)
+            done?(code, "")
+            return
+        }
+        if busy { return }
+        busy = true
+        statusText = "Running hp-m177 \(args.joined(separator: " "))…"
         root?.needsDisplay = true
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self else { return }
+            let (code, text) = self.spawnHp(args)
+            DispatchQueue.main.async {
+                self.busy = false
+                self.lastExit = code
+                self.appendLog("$ hp-m177 \(args.joined(separator: " "))\n\(text)\n")
+                if code == 0 {
+                    self.statusText = "Done."
+                } else {
+                    let tail = text.split(whereSeparator: \.isNewline).suffix(2).joined(separator: " ")
+                    self.statusText = "Failed (exit \(code)). \(tail)"
+                }
+                self.root?.needsDisplay = true
+                done?(code, text)
+            }
+        }
+    }
+
+    func spawnHp(_ args: [String]) -> (Int32, String) {
+        let bin = hpBinary()
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: which(bin))
         proc.arguments = args
@@ -659,19 +795,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             proc.waitUntilExit()
             let data = pipe.fileHandleForReading.readDataToEndOfFile()
             let text = String(data: data, encoding: .utf8) ?? ""
-            if window != nil {
-                logView.string += "$ \(bin) \(args.joined(separator: " "))\n\(text)\n"
-            }
-            lastExit = proc.terminationStatus
-            FileHandle.standardOutput.write(data)
-            statusText = lastExit == 0 ? "Done." : "Failed (exit \(lastExit))."
-            root?.needsDisplay = true
+            return (proc.terminationStatus, text)
         } catch {
-            lastExit = 1
-            statusText = "Could not start hp-m177: \(error.localizedDescription)"
-            fputs("\(statusText)\n", stderr)
-            root?.needsDisplay = true
+            return (1, "Could not start hp-m177: \(error.localizedDescription)\n")
         }
+    }
+
+    func hpBinary() -> String {
+        ProcessInfo.processInfo.environment["HP_M177_BIN"]
+            ?? bundledBinary()
+            ?? "hp-m177"
+    }
+
+    func appendLog(_ text: String) {
+        guard window != nil else { return }
+        logView.string += text
+        logView.scrollToEndOfDocument(nil)
     }
 
     func bundledBinary() -> String? {

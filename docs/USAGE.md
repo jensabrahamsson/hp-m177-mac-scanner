@@ -96,11 +96,12 @@ Spotlight name: **HP M177 Scanner**.
 
 The window title is **HP M177 Scanner**. A top row has **Discover**, **Add
 scanner**, **Preview**, and **Scan**. The left column has Host/IP, source /
-color / DPI / format, and the Documents save path
-(`~/Documents/scan-<unix>.<ext>`). After Preview, drag a rectangle on the
-right-hand glass image to crop. **Add printer (if missing)** only creates an
-AirPrint queue when none exists. The app icon is a flatbed scanner (open lid /
-glass), not a printer.
+color / DPI / format (click a row to cycle), and the Documents save path
+(`~/Documents/scan-<unix>.<ext>`). Default DPI is **100** (a full 300 dpi
+page can take a minute on this firmware). After Preview, drag a rectangle on
+the right-hand glass image to crop. **Add printer (if missing)** only creates
+an AirPrint queue when none exists. The app icon is a flatbed scanner (open
+lid / glass), not a printer.
 
 Developer flags:
 
@@ -116,7 +117,8 @@ and exits 0 only when Scan/Discover actually drew pixels (not just frames).
 
 `hp-m177-gui --smoke` calls `GuiApp::add_scanner` and `GuiApp::scan`.
 `hp-m177-native-gui --smoke` is the AppKit helper: real `hp-m177 add` then
-`hp-m177 scan`.
+`hp-m177 scan`. `--button-smoke` builds the window and fires the same Add /
+Preview / Scan handlers the blue buttons use.
 
 To rebuild only the Swift binary without installing the `.app`:
 

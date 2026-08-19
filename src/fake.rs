@@ -24,6 +24,7 @@ pub struct FakeState {
     pub job_counter: u32,
     pub adf_pages_remaining: u32,
     pub paper_in_adf: bool,
+    pub busy_creates_seen: u32,
 }
 
 #[derive(Clone)]
@@ -95,6 +96,8 @@ pub struct FakeOptions {
     pub retrieve_empty: bool,
     /// SOAP RetrieveImage returns HTTP 500 (must fall through to WSD).
     pub retrieve_http_error: bool,
+    /// First N SOAP CreateScanJob calls return Error 13 (device busy).
+    pub soap_busy_creates: u32,
     /// GetScannerElements does not answer (probe falls through to WSD).
     pub soap_dead: bool,
 }
@@ -110,6 +113,7 @@ impl Default for FakeOptions {
             get_job_info_fault: false,
             retrieve_empty: false,
             retrieve_http_error: false,
+            soap_busy_creates: 0,
             soap_dead: false,
         }
     }
@@ -211,6 +215,18 @@ fn handle(
         return (202, "application/soap+xml; charset=utf-8".into(), xml.into_bytes());
     }
     if body.contains("CreateScanJob") {
+        if opts.soap_busy_creates > 0 {
+            let mut st = state.lock().unwrap();
+            if st.busy_creates_seen < opts.soap_busy_creates {
+                st.busy_creates_seen += 1;
+                let fault = r#"<?xml version="1.0"?><SOAP-ENV:Envelope xmlns:SOAP-ENV="http://www.w3.org/2003/05/soap-envelope"><SOAP-ENV:Body><SOAP-ENV:Fault><SOAP-ENV:Reason><SOAP-ENV:Text>Error 13</SOAP-ENV:Text></SOAP-ENV:Reason></SOAP-ENV:Fault></SOAP-ENV:Body></SOAP-ENV:Envelope>"#;
+                return (
+                    500,
+                    "application/soap+xml; charset=utf-8".into(),
+                    fault.as_bytes().to_vec(),
+                );
+            }
+        }
         if opts.soap_create_fault {
             let fault = r#"<?xml version="1.0"?><SOAP-ENV:Envelope xmlns:SOAP-ENV="http://www.w3.org/2003/05/soap-envelope"><SOAP-ENV:Body><SOAP-ENV:Fault><SOAP-ENV:Code><SOAP-ENV:Value>SOAP-ENV:Sender</SOAP-ENV:Value></SOAP-ENV:Code><SOAP-ENV:Reason><SOAP-ENV:Text>Error 4</SOAP-ENV:Text></SOAP-ENV:Reason></SOAP-ENV:Fault></SOAP-ENV:Body></SOAP-ENV:Envelope>"#;
             return (

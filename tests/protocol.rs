@@ -465,6 +465,41 @@ fn soap_retrieve_http_error_falls_back_to_listening_wsd() {
 }
 
 #[test]
+fn soap_busy_error13_retries_then_scans() {
+    use hp_m177::fake::FakeOptions;
+    use hp_m177::model::{ColorMode, DeviceRecord, JobProtocol, OutputFormat, ScanSource};
+    let fake = FakeDevice::start_with(FakeOptions {
+        soap_busy_creates: 2,
+        ..FakeOptions::default()
+    })
+    .unwrap();
+    let rec = DeviceRecord {
+        id: "b".into(),
+        name: "M177fw".into(),
+        host: fake.host(),
+        job: JobProtocol::Soap { port: fake.port() },
+        has_escl_caps: true,
+        has_platen: true,
+        has_adf: true,
+        uuid: None,
+    };
+    let t = UreqTransport::default();
+    let req = ScanRequest {
+        source: ScanSource::Platen,
+        color: ColorMode::Color,
+        dpi: 300,
+        format: OutputFormat::Jpeg,
+        output: None,
+        region: None,
+    };
+    let started = std::time::Instant::now();
+    let out = scan(&t, &rec, &req).expect("retry after Error 13");
+    assert!(started.elapsed().as_secs() < 5);
+    assert!(imagefmt::is_jpeg(&out.bytes));
+    assert!(fake.last_create_job_xml().contains("CreateScanJob"));
+}
+
+#[test]
 fn live_get_job_info_fixture_parses() {
     let xml = include_str!("../fixtures/live/soap-GetJobInfo.xml");
     let info = hp_m177::soap::parse_job_info(xml).unwrap();

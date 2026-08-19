@@ -48,6 +48,10 @@ fn appkit_gui_exists_and_invokes_cli() {
     );
     assert!(swift.contains("tiff") || swift.contains("TIFF"));
     assert!(swift.contains("lineart") || swift.contains("B/W") || swift.contains("bw"));
+    assert!(
+        swift.contains("--button-smoke") && swift.contains("HitTarget") && swift.contains("runHpAsync"),
+        "window buttons must be clickable and must not block the UI on SOAP"
+    );
 }
 
 #[test]
