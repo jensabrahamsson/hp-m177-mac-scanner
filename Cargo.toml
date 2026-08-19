@@ -31,15 +31,23 @@ name = "hp-m177-gui"
 path = "src/bin/hp-m177-gui.rs"
 
 [dependencies]
-# Stay on 4.5: clap 4.6 needs edition 2024 (Cargo ≥ 1.85).
-clap = { version = "~4.5.36", features = ["derive"] }
+# Stay on mid-4.5: clap 4.6 and clap_lex 1.1 need edition 2024 (Cargo ≥ 1.85).
+clap = { version = "=4.5.36", features = ["derive"] }
+clap_lex = "=0.7.4"
 mdns-sd = "0.13"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "2.0"
 tiny_http = "0.12"
 ureq = { version = "2.12", default-features = false, features = ["tls"] }
-uuid = { version = "1.11", features = ["v4"] }
+# url 2.5.8 → idna 1.1 → idna_adapter 1.2 → icu 2.3 (edition 2024).
+idna = "=1.0.3"
+idna_adapter = "=1.1.0"
+url = "=2.5.4"
+uuid = { version = "=1.11.0", features = ["v4"] }
+# rustls/zeroize 1.9+ and getrandom 0.3/0.4 need edition 2024.
+zeroize = "=1.8.1"
+getrandom = "=0.2.15"
 
 [dev-dependencies]
 pretty_assertions = "1.4"

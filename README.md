@@ -40,12 +40,12 @@ install a kernel extension / ICA plugin.
 
 ## Install
 
-Requires Rust **1.82 or newer**. `cargo install` without `--locked` can
-otherwise pull clap 4.6, which needs edition 2024 (Cargo 1.85+). If `cargo
---version` is older than 1.82, run `rustup update` (or upgrade the Homebrew
-`rust` formula).
+Requires Rust **1.82 or newer** (`cargo --version`). Newer crates.io
+releases of clap/icu/getrandom need edition 2024 (Cargo 1.85+); this
+repo pins older versions so 1.82 works. Always install with `--locked`.
 
 ```bash
+git pull
 cargo install --path . --locked
 ```
 
