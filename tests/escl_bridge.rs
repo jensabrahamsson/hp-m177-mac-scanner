@@ -58,6 +58,7 @@ fn cycle(label: &str) {
         dpi: 300,
         format: hp_m177::OutputFormat::Jpeg,
         output: None,
+        region: None,
     });
     let created = t
         .post(&format!("{base}/ScanJobs"), settings.as_bytes(), "text/xml")
@@ -113,6 +114,7 @@ fn escl_pdf_job() {
         dpi: 300,
         format: hp_m177::OutputFormat::Pdf,
         output: None,
+        region: None,
     });
     let created = t
         .post(
@@ -168,6 +170,7 @@ fn hit_escl_once(t: &UreqTransport, origin: &str, fake: &FakeDevice, label: &str
         dpi: 300,
         format: hp_m177::OutputFormat::Jpeg,
         output: None,
+        region: None,
     });
     let created = t
         .post(&format!("{base}/ScanJobs"), settings.as_bytes(), "text/xml")

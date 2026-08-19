@@ -252,11 +252,29 @@ fn handle(
         }
         st.adf_pages_remaining = st.adf_pages_remaining.saturating_sub(1);
         let ticket = soap::parse_job_ticket(&st.last_create_job_xml).unwrap_or_default();
-        let comment = format!(
-            "source={} color={} dpi={}",
-            ticket.source, ticket.color, ticket.dpi
-        );
-        let jpeg = imagefmt::synthetic_jpeg(&comment, ticket.color);
+        let mut rgb = vec![0u8; 8 * 8 * 3];
+        for i in 0..64 {
+            let (r, g, b) = match ticket.color {
+                ColorMode::Color => (200, 40, 40),
+                ColorMode::Gray => (160, 160, 160),
+                ColorMode::Lineart => {
+                    if i % 2 == 0 {
+                        (0, 0, 0)
+                    } else {
+                        (255, 255, 255)
+                    }
+                }
+            };
+            rgb[i * 3] = r;
+            rgb[i * 3 + 1] = g;
+            rgb[i * 3 + 2] = b;
+        }
+        let jpeg = imagefmt::rgb_to_jpeg(&rgb, 8, 8, 80).unwrap_or_else(|_| {
+            imagefmt::synthetic_jpeg(
+                &format!("source={} color={} dpi={}", ticket.source, ticket.color, ticket.dpi),
+                ticket.color,
+            )
+        });
         let dime_body = dime::wrap_soap_and_jpeg(soap::retrieve_image_soap_stub(), &jpeg);
         return (200, "application/dime".into(), dime_body);
     }

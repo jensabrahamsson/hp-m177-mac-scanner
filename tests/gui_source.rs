@@ -26,4 +26,27 @@ fn appkit_gui_exists_and_invokes_cli() {
         "Swift GUI must invoke hp-m177 add and scan"
     );
     assert!(swift.contains("HP-M177") || swift.contains("M177"));
+    assert!(swift.contains("--exec"), "AppKit helper must be scriptable");
+    assert!(
+        swift.contains("PreviewView") || swift.contains("preview"),
+        "GUI must have a preview surface"
+    );
+    assert!(swift.contains("tiff") || swift.contains("TIFF"));
+    assert!(swift.contains("lineart") || swift.contains("B/W") || swift.contains("bw"));
+}
+
+#[test]
+fn app_icon_is_declared_and_present() {
+    let icns = std::path::Path::new("gui/AppIcon.icns");
+    assert!(icns.is_file(), "gui/AppIcon.icns missing");
+    assert!(icns.metadata().unwrap().len() > 1024, "icns too small");
+    let magic = std::fs::read(icns).unwrap();
+    assert!(
+        magic.starts_with(b"icns") || magic.windows(4).any(|w| w == b"icns"),
+        "AppIcon.icns is not an Apple icon"
+    );
+    let install = include_str!("../scripts/install-gui.sh");
+    assert!(install.contains("AppIcon.icns"));
+    assert!(install.contains("CFBundleIconFile"));
+    assert!(install.contains("AppIcon"));
 }

@@ -37,16 +37,19 @@ hp-m177 discover [--timeout 3]
 hp-m177 add <host> [--soap-port 8289] [--escl-port 80]
 hp-m177 list
 hp-m177 probe <host> [--soap-port] [--escl-port]
-hp-m177 scan [--source platen|adf] [--color color|gray] [--dpi 300]
-             [--format jpeg|pdf] [--output PATH] [--device ID]
+hp-m177 scan [--source platen|adf] [--color color|gray|lineart] [--dpi 300]
+             [--format jpeg|pdf|tiff] [--output PATH] [--device ID]
+             [--region x,y,w,h]
 hp-m177 add-printer [host]
 hp-m177 bridge [--port 8087] [--bind ADDR] [--no-advertise]
 ```
 
-`add` probes eSCL capabilities (informational) and the SOAP scanner on
-`--soap-port`. This firmware’s working job API is SOAP; that is what gets
-saved. `scan` then talks SOAP: CreateScanJob → GetJobInfo → RetrieveImage
-(DIME). If you asked for PDF, the JPEG is wrapped locally.
+`add` probes eSCL capabilities, HP SOAP on `--soap-port`, and WSD on 3911.
+This firmware’s native eSCL ScanJobs are 404. SOAP 8289 is used when it
+answers; otherwise the saved job protocol is WSD (`dib`). `scan` talks SOAP
+(CreateScanJob → GetJobInfo → RetrieveImage DIME) and falls back to WSD
+if SOAP times out. PDF and TIFF are built locally. Default `--output` is
+`~/Documents/scan-<timestamp>.<ext>`.
 
 ## `hp-m177-bridge`
 
@@ -66,14 +69,16 @@ The AppKit window and these commands share `GuiApp::add_scanner` / `GuiApp::scan
 ```
 hp-m177-gui add 192.168.50.14
 hp-m177-gui list
-hp-m177-gui scan --source platen --color color --dpi 300 --format jpeg --output ~/Desktop/scan.jpg
+hp-m177-gui scan --source platen --color color --dpi 300 --format jpeg --output ~/Documents/scan.jpg
+hp-m177-gui exec scan --format tiff --output ~/Documents/scan.tiff
 ```
 
-The native helper (same code as the buttons) also accepts:
+The native helper (same code as the buttons, including Preview) also accepts:
 
 ```
 hp-m177-native-gui --exec add --host 192.168.50.14
-hp-m177-native-gui --exec scan --source platen --color color --dpi 300 --format jpeg --output ~/Desktop/scan.jpg
+hp-m177-native-gui --exec scan --source platen --color color --dpi 300 --format jpeg --output ~/Documents/scan.jpg
+hp-m177-native-gui --exec preview --host 192.168.50.14
 ```
 
 Exit status is 0 on success. stdout is the CLI/API log.

@@ -48,6 +48,9 @@ uuid = { version = "=1.11.0", features = ["v4"] }
 # rustls/zeroize 1.9+ and getrandom 0.3/0.4 need edition 2024.
 zeroize = "=1.8.1"
 getrandom = "=0.2.15"
+# 0.6 stays on edition 2021 (Cargo 1.82). WSD jobs return uncompressed BMP.
+jpeg-encoder = "=0.6.1"
+jpeg-decoder = "=0.3.1"
 
 [dev-dependencies]
 pretty_assertions = "1.4"

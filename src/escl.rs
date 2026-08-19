@@ -59,6 +59,7 @@ fn input_caps_block() -> &'static str {
           <scan:ColorModes>
             <scan:ColorMode>RGB24</scan:ColorMode>
             <scan:ColorMode>Grayscale8</scan:ColorMode>
+            <scan:ColorMode>BlackAndWhite1</scan:ColorMode>
           </scan:ColorModes>
           <scan:DocumentFormats>
             <pwg:DocumentFormat>image/jpeg</pwg:DocumentFormat>
@@ -132,10 +133,15 @@ pub fn parse_scan_settings(xml: &str) -> Result<ScanRequest> {
         ScanSource::Platen
     };
     let color_raw = first_text(xml, "ColorMode").unwrap_or_else(|| "RGB24".into());
-    let color = if color_raw.to_ascii_lowercase().contains("gray") {
-        ColorMode::Gray
-    } else {
-        ColorMode::Color
+    let color = {
+        let n = color_raw.to_ascii_lowercase();
+        if n.contains("gray") {
+            ColorMode::Gray
+        } else if n.contains("black") || n.contains("bw") || n.contains("lineart") {
+            ColorMode::Lineart
+        } else {
+            ColorMode::Color
+        }
     };
     let dpi = first_text(xml, "XResolution")
         .and_then(|s| s.parse().ok())
@@ -146,6 +152,8 @@ pub fn parse_scan_settings(xml: &str) -> Result<ScanRequest> {
         .unwrap_or_else(|| "image/jpeg".into());
     let format = if fmt_raw.to_ascii_lowercase().contains("pdf") {
         OutputFormat::Pdf
+    } else if fmt_raw.to_ascii_lowercase().contains("tif") {
+        OutputFormat::Tiff
     } else {
         OutputFormat::Jpeg
     };
@@ -155,6 +163,7 @@ pub fn parse_scan_settings(xml: &str) -> Result<ScanRequest> {
         dpi,
         format,
         output: None,
+        region: None,
     })
 }
 
@@ -231,6 +240,7 @@ mod tests {
             dpi: 300,
             format: OutputFormat::Pdf,
             output: None,
+            region: None,
         };
         let parsed = parse_scan_settings(&scan_settings_xml(&req)).unwrap();
         assert_eq!(parsed.source, ScanSource::Adf);

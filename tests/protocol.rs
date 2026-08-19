@@ -52,6 +52,7 @@ fn scan_combo(source: ScanSource, color: ColorMode, format: OutputFormat) {
         dpi: 300,
         format,
         output: None,
+        region: None,
     };
     let out = scan(&t, &rec, &req).expect("scan");
     match format {
@@ -60,6 +61,7 @@ fn scan_combo(source: ScanSource, color: ColorMode, format: OutputFormat) {
             assert!(imagefmt::is_pdf(&out.bytes), "expected %PDF … %%EOF");
             assert!(out.bytes.windows(b"/Type /Page".len()).any(|w| w == b"/Type /Page"));
         }
+        OutputFormat::Tiff => assert!(imagefmt::is_tiff(&out.bytes), "expected TIFF header"),
     }
     let ticket = fake
         .last_ticket()
@@ -135,6 +137,7 @@ fn soap_create_job_encode_is_what_scan_sends() {
         dpi: 300,
         format: OutputFormat::Jpeg,
         output: None,
+        region: None,
     };
     let _ = scan(&t, &rec, &req).unwrap();
     let xml = fake.last_create_job_xml();
@@ -148,7 +151,7 @@ fn soap_create_job_encode_is_what_scan_sends() {
 }
 
 #[test]
-fn add_uses_soap_when_device_has_escl_caps_but_soap_probe_is_down() {
+fn add_uses_wsd_when_device_has_escl_caps_but_soap_probe_is_down() {
     use hp_m177::transport::{FnTransport, HttpResponse};
     let caps = include_str!("../fixtures/live/escl-ScannerCapabilities.xml");
     let t = FnTransport {
@@ -175,9 +178,92 @@ fn add_uses_soap_when_device_has_escl_caps_but_soap_probe_is_down() {
     };
     let mut store = Store::open(unique_home()).unwrap();
     let rec = add_by_address(&mut store, &t, "192.168.50.14", Some(8289), Some(80))
-        .expect("add should keep SOAP for this firmware");
+        .expect("add should prefer WSD when SOAP is down");
     match rec.job {
-        hp_m177::JobProtocol::Soap { port } => assert_eq!(port, 8289),
-        other => panic!("expected SOAP, got {other:?}"),
+        hp_m177::JobProtocol::Wsd { port } => assert_eq!(port, 3911),
+        other => panic!("expected WSD, got {other:?}"),
     }
+}
+
+#[test]
+fn soap_timeout_falls_back_to_wsd_dib() {
+    use hp_m177::imagefmt;
+    use hp_m177::model::{ColorMode, DeviceRecord, JobProtocol, OutputFormat, ScanSource};
+    use hp_m177::transport::{FnTransport, HttpResponse};
+    use std::sync::{Arc, Mutex};
+
+    let bmp = imagefmt::solid_bmp_bgra(2, 2, 0, 0, 255);
+    let mut mtom = Vec::new();
+    mtom.extend_from_slice(
+        b"--==b\r\nContent-Type: application/xop+xml\r\n\r\n<SOAP/>\r\n--==b\r\nContent-Type: image/bmp\r\n\r\n",
+    );
+    mtom.extend_from_slice(&bmp);
+    mtom.extend_from_slice(b"\r\n--==b--\r\n");
+    let create = br#"<?xml version="1.0"?><Envelope><JobId>7</JobId><JobToken>tok-7</JobToken></Envelope>"#;
+    let sent = Arc::new(Mutex::new(Vec::<String>::new()));
+    let sent2 = sent.clone();
+    let t = FnTransport {
+        f: move |req| {
+            sent2.lock().unwrap().push(req.url.clone());
+            if req.url.contains(":8289") {
+                return Ok(HttpResponse {
+                    status: 200,
+                    headers: vec![],
+                    body: br#"<?xml version="1.0"?><SOAP-ENV:Envelope xmlns:SOAP-ENV="http://www.w3.org/2003/05/soap-envelope"><SOAP-ENV:Body><SOAP-ENV:Fault><SOAP-ENV:Code><SOAP-ENV:Value>SOAP-ENV:Sender</SOAP-ENV:Value></SOAP-ENV:Code><SOAP-ENV:Reason><SOAP-ENV:Text>Error 4</SOAP-ENV:Text></SOAP-ENV:Reason></SOAP-ENV:Fault></SOAP-ENV:Body></SOAP-ENV:Envelope>"#.to_vec(),
+                });
+            }
+            if req.url.contains("/scanner") {
+                let text = String::from_utf8_lossy(&req.body);
+                if text.contains("CreateScanJob") {
+                    assert!(text.contains("<sca:Format>dib</sca:Format>"));
+                    return Ok(HttpResponse {
+                        status: 200,
+                        headers: vec![],
+                        body: create.to_vec(),
+                    });
+                }
+                if text.contains("RetrieveImage") {
+                    return Ok(HttpResponse {
+                        status: 200,
+                        headers: vec![(
+                            "Content-Type".into(),
+                            "multipart/related; type=application/xop+xml".into(),
+                        )],
+                        body: mtom.clone(),
+                    });
+                }
+            }
+            Err(hp_m177::Error::Transport {
+                url: req.url,
+                detail: "unexpected".into(),
+            })
+        },
+    };
+    let rec = DeviceRecord {
+        id: "t".into(),
+        name: "M177fw".into(),
+        host: "192.168.50.14".into(),
+        job: JobProtocol::Soap { port: 8289 },
+        has_escl_caps: true,
+        has_platen: true,
+        has_adf: true,
+        uuid: None,
+    };
+    let req = ScanRequest {
+        source: ScanSource::Platen,
+        color: ColorMode::Color,
+        dpi: 300,
+        format: OutputFormat::Jpeg,
+        output: None,
+        region: None,
+    };
+    let out = scan(&t, &rec, &req).expect("WSD fallback scan");
+    assert!(imagefmt::is_jpeg(&out.bytes));
+    let urls = sent.lock().unwrap().clone();
+    assert!(urls.iter().any(|u| u.contains("/scanner")));
+}
+
+#[test]
+fn platen_color_tiff_against_fake() {
+    scan_combo(ScanSource::Platen, ColorMode::Color, OutputFormat::Tiff);
 }

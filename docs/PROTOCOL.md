@@ -17,8 +17,8 @@ AirPrint UUID `8adb6a9a-f28e-31fc-15de-50e0c4efdd92`.
 | --- | --- |
 | 80 / 8080 / 443 | HTTP(S), LEDM, incomplete eSCL |
 | 631 | IPP / AirPrint |
-| 8289 | HP SOAP scan (gSOAP/2.7) — **working job API** |
-| 3911 | WSD HTTP (404 on `/`) |
+| 8289 | HP SOAP scan (gSOAP/2.7) — DIME JPEG when the service is healthy |
+| 3911 | Microsoft WSD Scan (`POST /scanner`) — `dib` / BMP via MTOM when SOAP is wedged |
 | 9100 | JetDirect raw print |
 
 ## eSCL (AirScan) on the device
@@ -58,6 +58,22 @@ A first live `CreateScanJob` attempt using a slightly different tag layout
 returned gSOAP **Error 4** (`SOAP_TAG_MISMATCH`). The client therefore emits
 the HPSimpleScan-shaped `wscn:CreateScanJobRequest` ticket and retries the
 short `CreateScanJob` operation name if the device rejects the first.
+
+`scan()` uses an 8 second timeout on SOAP CreateScanJob. A transport timeout
+falls through to WSD.
+
+## WSD Scan on 3911
+
+`POST http://<host>:3911/scanner` with SOAP 1.2 + WS-Addressing.
+
+- `Content-Type: application/soap+xml; charset=utf-8; action="<Action>"`
+- `User-Agent: WSDAPI`
+- Namespace `http://schemas.microsoft.com/windows/2006/08/wdp/scan`
+- `CreateScanJob` with `Format` **dib** (jfif is rejected:
+  `ClientErrorDocumentFormatNotSupported`)
+- `RetrieveImage` returns `multipart/related` XOP; the image part is
+  `image/bmp` (32-bit top-down DIB, ~2528×3465 at 300 dpi)
+- The client converts BMP → JPEG / PDF / TIFF
 
 ## Local eSCL facade
 

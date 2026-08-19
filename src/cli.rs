@@ -1,6 +1,7 @@
 use crate::error::{Error, Result};
 use crate::model::{
-    OutputFormat, ScanRequest, DEFAULT_BRIDGE_PORT, DEFAULT_ESCL_PORT, DEFAULT_SOAP_PORT,
+    default_scan_path, OutputFormat, ScanRegion, ScanRequest, DEFAULT_BRIDGE_PORT,
+    DEFAULT_ESCL_PORT, DEFAULT_SOAP_PORT,
 };
 use crate::probe::{self, split_host_port};
 use crate::scan;
@@ -54,6 +55,9 @@ pub enum Command {
         output: Option<PathBuf>,
         #[arg(long)]
         device: Option<String>,
+        /// Crop in 1/1000 inch: x,y,width,height
+        #[arg(long)]
+        region: Option<String>,
     },
     /// Probe a host without saving it.
     Probe {
@@ -147,6 +151,7 @@ pub fn run(cli: Cli, store: &mut Store, transport: &dyn Transport, out: &mut dyn
             format,
             output,
             device,
+            region,
         } => {
             let rec = match device {
                 Some(id) => store.get(&id)?,
@@ -158,10 +163,9 @@ pub fn run(cli: Cli, store: &mut Store, transport: &dyn Transport, out: &mut dyn
                 dpi,
                 format: OutputFormat::parse(&format)?,
                 output: output.clone(),
+                region: region.as_deref().map(ScanRegion::parse).transpose()?,
             };
-            let dest = output.unwrap_or_else(|| {
-                PathBuf::from(format!("scan-{}.{}", timestamp(), req.format.extension()))
-            });
+            let dest = output.unwrap_or_else(|| default_scan_path(req.format));
             let scanned = scan::scan(transport, &rec, &req)?;
             let path = scan::write_output(&scanned, &dest)?;
             writeln!(
@@ -283,12 +287,4 @@ where
     let transport = UreqTransport::default();
     let mut stdout = std::io::stdout();
     run(cli, &mut store, &transport, &mut stdout)
-}
-
-fn timestamp() -> String {
-    let secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-    format!("{secs}")
 }

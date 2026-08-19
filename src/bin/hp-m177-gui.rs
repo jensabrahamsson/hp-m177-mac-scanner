@@ -6,7 +6,7 @@
 
 use clap::{Parser, Subcommand};
 use hp_m177::gui::GuiApp;
-use hp_m177::model::{ColorMode, OutputFormat, ScanRequest, ScanSource};
+use hp_m177::model::{ColorMode, OutputFormat, ScanRegion, ScanRequest, ScanSource};
 use hp_m177::transport::UreqTransport;
 use std::io::{self, Write};
 use std::path::PathBuf;
@@ -48,9 +48,16 @@ enum GuiCmd {
         format: String,
         #[arg(short, long)]
         output: Option<PathBuf>,
+        #[arg(long)]
+        region: Option<String>,
     },
     /// List saved scanners.
     List,
+    /// Forward to the AppKit binary (`--exec add|scan|…`).
+    Exec {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true, required = true)]
+        args: Vec<String>,
+    },
 }
 
 fn main() {
@@ -119,6 +126,7 @@ fn run_api(cmd: GuiCmd) -> hp_m177::Result<i32> {
             dpi,
             format,
             output,
+            region,
         } => {
             let req = ScanRequest {
                 source: ScanSource::parse(&source)?,
@@ -126,6 +134,7 @@ fn run_api(cmd: GuiCmd) -> hp_m177::Result<i32> {
                 dpi,
                 format: OutputFormat::parse(&format)?,
                 output: output.clone(),
+                region: region.as_deref().map(ScanRegion::parse).transpose()?,
             };
             let (out, path) = app.scan(&t, &req)?;
             println!(
@@ -145,8 +154,87 @@ fn run_api(cmd: GuiCmd) -> hp_m177::Result<i32> {
                 println!("(no scanners)");
             }
         }
+        GuiCmd::Exec { args } => {
+            if let Some(helper) = find_native_gui() {
+                let status = Command::new(&helper)
+                    .arg("--exec")
+                    .args(&args)
+                    .status()
+                    .map_err(|e| hp_m177::Error::msg(format!("native gui: {e}")))?;
+                return Ok(status.code().unwrap_or(1));
+            }
+            return run_api(parse_exec_fallback(&args)?);
+        }
     }
     Ok(0)
+}
+
+fn parse_exec_fallback(args: &[String]) -> hp_m177::Result<GuiCmd> {
+    let verb = args.first().map(|s| s.as_str()).unwrap_or("");
+    let mut host = String::new();
+    let mut source = "platen".to_string();
+    let mut color = "color".to_string();
+    let mut dpi = 300u32;
+    let mut format = "jpeg".to_string();
+    let mut output = None;
+    let mut region = None;
+    let mut i = 1;
+    while i < args.len() {
+        let a = args[i].as_str();
+        let next = || args.get(i + 1).cloned().unwrap_or_default();
+        match a {
+            "--host" => {
+                host = next();
+                i += 1;
+            }
+            "--source" => {
+                source = next();
+                i += 1;
+            }
+            "--color" => {
+                color = next();
+                i += 1;
+            }
+            "--dpi" => {
+                dpi = next().parse().unwrap_or(300);
+                i += 1;
+            }
+            "--format" => {
+                format = next();
+                i += 1;
+            }
+            "--output" => {
+                output = Some(PathBuf::from(next()));
+                i += 1;
+            }
+            "--region" => {
+                region = Some(next());
+                i += 1;
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    match verb {
+        "add" => {
+            if host.is_empty() {
+                return Err(hp_m177::Error::msg("exec add needs --host"));
+            }
+            Ok(GuiCmd::Add { host })
+        }
+        "scan" => Ok(GuiCmd::Scan {
+            source,
+            color,
+            dpi,
+            format,
+            output,
+            region,
+        }),
+        "list" => Ok(GuiCmd::List),
+        other => Err(hp_m177::Error::msg(format!(
+            "unknown exec verb '{other}' (use add|scan|list)"
+        ))),
+    }
 }
 
 fn find_native_gui() -> Option<PathBuf> {

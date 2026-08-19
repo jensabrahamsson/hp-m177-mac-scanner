@@ -14,6 +14,7 @@ pub struct HttpRequest {
     pub url: String,
     pub headers: Vec<(String, String)>,
     pub body: Vec<u8>,
+    pub timeout: Option<Duration>,
 }
 
 impl HttpRequest {
@@ -23,6 +24,7 @@ impl HttpRequest {
             url: url.into(),
             headers: Vec::new(),
             body: Vec::new(),
+            timeout: None,
         }
     }
 
@@ -32,7 +34,18 @@ impl HttpRequest {
             url: url.into(),
             headers: vec![("Content-Type".into(), content_type.into())],
             body,
+            timeout: None,
         }
+    }
+
+    pub fn with_timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = Some(timeout);
+        self
+    }
+
+    pub fn header(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
+        self.headers.push((name.into(), value.into()));
+        self
     }
 }
 
@@ -111,6 +124,9 @@ impl Transport for UreqTransport {
         };
         for (k, v) in &req.headers {
             call = call.set(k, v);
+        }
+        if let Some(t) = req.timeout {
+            call = call.timeout(t);
         }
         let result = if req.method == Method::Post {
             call.send_bytes(&req.body)

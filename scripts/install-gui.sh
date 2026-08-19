@@ -57,6 +57,24 @@ cat > "${APP_DIR}/Contents/Info.plist" <<'PLIST'
 </plist>
 PLIST
 
+# Custom Finder icon (script wrapper otherwise looks generic).
+if [ -f "${RES}/AppIcon.icns" ]; then
+  SETICON="$(mktemp -t hp-m177-seticon).swift"
+  cat > "${SETICON}" <<'SWIFT'
+import AppKit
+guard CommandLine.arguments.count >= 3,
+      let image = NSImage(contentsOfFile: CommandLine.arguments[2]) else {
+    fputs("setIcon: missing image\n", stderr)
+    exit(1)
+}
+let ok = NSWorkspace.shared.setIcon(image, forFile: CommandLine.arguments[1], options: [])
+print(ok ? "setIcon ok" : "setIcon failed")
+exit(ok ? 0 : 1)
+SWIFT
+  swift "${SETICON}" "${APP_DIR}" "${RES}/AppIcon.icns" || true
+  rm -f "${SETICON}"
+fi
+
 # Refresh Launch Services so Spotlight/Finder see the app.
 /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "${APP_DIR}" >/dev/null 2>&1 || true
 

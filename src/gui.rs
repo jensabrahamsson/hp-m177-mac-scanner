@@ -40,7 +40,7 @@ impl GuiApp {
     ) -> Result<(ScanOutput, PathBuf)> {
         let device = self.store.default_device()?;
         let dest = req.output.clone().unwrap_or_else(|| {
-            PathBuf::from(format!("scan-{}.{}", "gui", req.format.extension()))
+            crate::model::default_scan_path(req.format)
         });
         let out = scan::scan(transport, &device, req)?;
         let path = scan::write_output(&out, &dest)?;

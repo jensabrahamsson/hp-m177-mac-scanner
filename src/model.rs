@@ -1,12 +1,14 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::path::PathBuf;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Model this product is written against.
 pub const PRODUCT_NAME: &str = "HP Color LaserJet Pro MFP M177fw";
 pub const PRODUCT_SHORT: &str = "M177fw";
 pub const DEFAULT_SOAP_PORT: u16 = 8289;
 pub const DEFAULT_ESCL_PORT: u16 = 80;
+pub const DEFAULT_WSD_PORT: u16 = 3911;
 pub const DEFAULT_IPP_PORT: u16 = 631;
 pub const DEFAULT_BRIDGE_PORT: u16 = 8087;
 
@@ -61,6 +63,7 @@ impl fmt::Display for ScanSource {
 pub enum ColorMode {
     Color,
     Gray,
+    Lineart,
 }
 
 impl ColorMode {
@@ -68,17 +71,20 @@ impl ColorMode {
         match raw.trim().to_ascii_lowercase().as_str() {
             "color" | "rgb" | "rgb24" | "colour" => Ok(Self::Color),
             "gray" | "grey" | "grayscale" | "greyscale" | "grayscale8" => Ok(Self::Gray),
+            "lineart" | "bw" | "b/w" | "black" | "binary" | "blackandwhite1"
+            | "blackandwhite" => Ok(Self::Lineart),
             other => Err(crate::error::Error::InvalidRequest(format!(
-                "unknown color mode '{other}' (use color or gray)"
+                "unknown color mode '{other}' (use color, gray, or lineart)"
             ))),
         }
     }
 
-    /// HP SOAP `ColorProcessing` value as returned by this firmware.
+    /// HP SOAP / WSD `ColorProcessing` value as returned by this firmware.
     pub fn soap_name(self) -> &'static str {
         match self {
             Self::Color => "RGB24",
             Self::Gray => "GrayScale8",
+            Self::Lineart => "BlackandWhite1",
         }
     }
 
@@ -87,6 +93,7 @@ impl ColorMode {
         match self {
             Self::Color => "RGB24",
             Self::Gray => "Grayscale8",
+            Self::Lineart => "BlackAndWhite1",
         }
     }
 }
@@ -96,17 +103,19 @@ impl fmt::Display for ColorMode {
         f.write_str(match self {
             Self::Color => "color",
             Self::Gray => "gray",
+            Self::Lineart => "lineart",
         })
     }
 }
 
-/// File the user asked to receive. The M177fw SOAP job returns JFIF;
-/// PDF is wrapped locally from that JPEG.
+/// File the user asked to receive. Device jobs return JPEG or BMP/`dib`;
+/// PDF and TIFF are produced locally from that raster.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum OutputFormat {
     Jpeg,
     Pdf,
+    Tiff,
 }
 
 impl OutputFormat {
@@ -114,8 +123,9 @@ impl OutputFormat {
         match raw.trim().to_ascii_lowercase().as_str() {
             "jpg" | "jpeg" | "jfif" | "image/jpeg" => Ok(Self::Jpeg),
             "pdf" | "application/pdf" => Ok(Self::Pdf),
+            "tif" | "tiff" | "image/tiff" => Ok(Self::Tiff),
             other => Err(crate::error::Error::InvalidRequest(format!(
-                "unknown format '{other}' (use jpeg or pdf)"
+                "unknown format '{other}' (use jpeg, pdf, or tiff)"
             ))),
         }
     }
@@ -124,6 +134,7 @@ impl OutputFormat {
         match self {
             Self::Jpeg => "jpg",
             Self::Pdf => "pdf",
+            Self::Tiff => "tiff",
         }
     }
 
@@ -131,6 +142,7 @@ impl OutputFormat {
         match self {
             Self::Jpeg => "image/jpeg",
             Self::Pdf => "application/pdf",
+            Self::Tiff => "image/tiff",
         }
     }
 }
@@ -140,6 +152,42 @@ impl fmt::Display for OutputFormat {
         f.write_str(match self {
             Self::Jpeg => "jpeg",
             Self::Pdf => "pdf",
+            Self::Tiff => "tiff",
+        })
+    }
+}
+
+/// Scan window in the firmware's 1/1000 inch units.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ScanRegion {
+    pub x: u32,
+    pub y: u32,
+    pub width: u32,
+    pub height: u32,
+}
+
+impl ScanRegion {
+    pub fn parse(raw: &str) -> crate::error::Result<Self> {
+        let parts: Vec<&str> = raw.split(',').map(str::trim).collect();
+        if parts.len() != 4 {
+            return Err(crate::error::Error::InvalidRequest(
+                "region must be x,y,width,height in 1/1000 inch".into(),
+            ));
+        }
+        let nums: Result<Vec<u32>, _> = parts.iter().map(|p| p.parse()).collect();
+        let nums = nums.map_err(|_| {
+            crate::error::Error::InvalidRequest("region values must be integers".into())
+        })?;
+        if nums[2] == 0 || nums[3] == 0 {
+            return Err(crate::error::Error::InvalidRequest(
+                "region width and height must be > 0".into(),
+            ));
+        }
+        Ok(Self {
+            x: nums[0],
+            y: nums[1],
+            width: nums[2],
+            height: nums[3],
         })
     }
 }
@@ -148,10 +196,12 @@ impl fmt::Display for OutputFormat {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum JobProtocol {
-    /// HP SOAP/WSD-like cycle on port 8289 (this firmware's working job API).
+    /// HP SOAP/DIME cycle on port 8289 (`http://tempuri.org/wscn.xsd`).
     Soap { port: u16 },
     /// Native eSCL ScanJobs (present on some firmware; this M177fw returns 404).
     Escl { port: u16 },
+    /// Microsoft WSD Scan on port 3911 (`/scanner`, document format `dib`).
+    Wsd { port: u16 },
 }
 
 impl JobProtocol {
@@ -177,17 +227,17 @@ impl DeviceRecord {
     pub fn soap_url(&self) -> Option<String> {
         match self.job {
             JobProtocol::Soap { port } => Some(format!("http://{}:{}/", self.host, port)),
-            JobProtocol::Escl { .. } => None,
+            JobProtocol::Escl { .. } | JobProtocol::Wsd { .. } => None,
         }
     }
 
     pub fn escl_base(&self) -> Option<String> {
         match self.job {
             JobProtocol::Escl { port } => Some(format!("http://{}:{}/eSCL", self.host, port)),
-            JobProtocol::Soap { .. } if self.has_escl_caps => {
+            JobProtocol::Soap { .. } | JobProtocol::Wsd { .. } if self.has_escl_caps => {
                 Some(format!("http://{}:{}/eSCL", self.host, DEFAULT_ESCL_PORT))
             }
-            JobProtocol::Soap { .. } => None,
+            _ => None,
         }
     }
 }
@@ -200,6 +250,7 @@ pub struct ScanRequest {
     pub dpi: u32,
     pub format: OutputFormat,
     pub output: Option<PathBuf>,
+    pub region: Option<ScanRegion>,
 }
 
 impl Default for ScanRequest {
@@ -210,6 +261,7 @@ impl Default for ScanRequest {
             dpi: 300,
             format: OutputFormat::Jpeg,
             output: None,
+            region: None,
         }
     }
 }
@@ -224,6 +276,40 @@ impl ScanRequest {
         }
         Ok(())
     }
+
+    /// Firmware media box in 1/1000 inch (Letter / A4-class).
+    pub fn media_size(&self) -> (u32, u32) {
+        match self.source {
+            ScanSource::Platen => (8500, 11690),
+            ScanSource::Adf => (8500, 14000),
+        }
+    }
+
+    pub fn region_or_full(&self) -> ScanRegion {
+        let (width, height) = self.media_size();
+        self.region.unwrap_or(ScanRegion {
+            x: 0,
+            y: 0,
+            width,
+            height,
+        })
+    }
+}
+
+/// macOS Documents folder, or the current directory if HOME is unset.
+pub fn default_scan_dir() -> PathBuf {
+    std::env::var_os("HOME")
+        .map(|h| PathBuf::from(h).join("Documents"))
+        .unwrap_or_else(|| PathBuf::from("."))
+}
+
+/// `~/Documents/scan-<unix-seconds>.<ext>`
+pub fn default_scan_path(format: OutputFormat) -> PathBuf {
+    let ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    default_scan_dir().join(format!("scan-{ts}.{}", format.extension()))
 }
 
 /// Bytes returned by a completed job.
@@ -299,6 +385,7 @@ impl SoapCapabilities {
                 match mode {
                     ColorMode::Color => n.contains("rgb24"),
                     ColorMode::Gray => n.contains("gray"),
+                    ColorMode::Lineart => n.contains("black") || n.contains("bw"),
                 }
             })
     }

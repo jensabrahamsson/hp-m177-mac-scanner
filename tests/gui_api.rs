@@ -32,6 +32,7 @@ fn gui_app_add_and_scan_against_fake() {
         dpi: 300,
         format: OutputFormat::Jpeg,
         output: Some(dest.clone()),
+        region: None,
     };
     let (out, path) = app.scan(&t, &req).expect("GuiApp::scan");
     assert!(imagefmt::is_jpeg(&out.bytes));

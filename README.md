@@ -13,6 +13,8 @@ worked and scanning did not.
 “HP”, “LaserJet”, and related names belong to their owners. This repository
 only talks the network protocols the printer already exposes on the LAN.
 
+The product contract is `REQUIREMENTS.md`. Contributor/build notes are `AGENTS.md`.
+
 ## License
 
 [MIT](LICENSE). Use it, fork it, break it, fix it. No warranty.
@@ -29,13 +31,15 @@ pixels is HP’s SOAP API on **TCP 8289**, with the image in a **DIME** body.
 This project:
 
 1. Discovers the device on the LAN or adds it by host/IP.
-2. Scans from the **platen** or **ADF**, in **color** or **grayscale**, to
-   **JPEG** or **PDF** (PDF is a one-page wrapper around the device JPEG).
+2. Scans from the **platen** or **ADF**, in **color**, **grayscale**, or
+   **black-and-white**, to **JPEG**, **PDF**, or **TIFF**.
 3. Ships a **CLI** and a **native Mac AppKit GUI** that share the same add/scan
-   logic.
+   logic. The GUI can **preview** the platen and drag a scan region.
 4. Optionally runs a **local eSCL + Bonjour `_uscan._tcp`** bridge so
    Image Capture, Preview, and System Settings treat it as a network scanner.
 5. Can add an AirPrint/CUPS printer **only if no queue already exists**.
+6. When HP SOAP on TCP 8289 is wedged, jobs fall back to **WSD Scan** on
+   TCP 3911 (`dib` / BMP → the requested file format).
 
 It does **not** replace the stock AirPrint driver, write a CUPS filter, or
 install a kernel extension / ICA plugin.
@@ -85,13 +89,15 @@ open "$HOME/Applications/HP M177 Scanner.app"
 hp-m177-gui
 ```
 
-In the window: host/IP → **Add scanner** → choose source/color/DPI/format → **Scan**.
+In the window: host/IP → **Add scanner** → **Preview** (optional region) →
+source / color / DPI / format → **Scan**. Files default to **Documents**.
 
 The same path is scriptable (no clicks):
 
 ```bash
 hp-m177-gui add 192.168.50.14
-hp-m177-gui scan --source platen --color color --dpi 300 --format jpeg --output ~/Desktop/scan.jpg
+hp-m177-gui scan --source platen --color color --dpi 300 --format jpeg --output ~/Documents/scan.jpg
+hp-m177-gui exec scan --source platen --format tiff --output ~/Documents/scan.tiff
 ```
 
 ## Add the scanner
@@ -119,17 +125,23 @@ If `add` says there is no usable scan protocol, the printer is off the LAN
 or both eSCL capabilities and SOAP are unreachable. Printing can still work
 via AirPrint.
 
-If `add` succeeds but `scan` times out on port **8289**, the printer’s SOAP
-scan service is wedged (TCP is open, no HTTP). Power-cycle the MFP (leave it
-unplugged ~10 seconds). eSCL capabilities on port 80 can still answer while
-SOAP is stuck.
+If SOAP on port **8289** does not answer, `add` records WSD on port **3911**
+and `scan` uses that path automatically (BMP/`dib` converted to JPEG, PDF, or
+TIFF). Power-cycling the MFP can restore SOAP; it is not required for a scan.
 
 ## Scan (CLI)
 
+Default output is `~/Documents/scan-<timestamp>.<ext>`.
+
 ```bash
-hp-m177 scan --source platen --color color --dpi 300 --format jpeg --output ~/Desktop/scan.jpg
-hp-m177 scan --source adf --color gray --dpi 300 --format pdf --output ~/Desktop/scan.pdf
+hp-m177 scan --source platen --color color --dpi 300 --format jpeg
+hp-m177 scan --source adf --color gray --dpi 300 --format pdf --output ~/Documents/scan.pdf
+hp-m177 scan --source platen --color lineart --format tiff
+hp-m177 scan --region 500,500,4000,6000 --format jpeg
 ```
+
+`--color` is `color`, `gray`, or `lineart`. `--format` is `jpeg`, `pdf`, or
+`tiff`. `--region` is `x,y,width,height` in 1/1000 inch.
 
 ## Image Capture / Preview
 

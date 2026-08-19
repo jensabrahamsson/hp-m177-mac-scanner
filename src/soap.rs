@@ -24,10 +24,8 @@ pub fn create_scan_job_xml(req: &ScanRequest, scan_id: &str) -> String {
     let color = req.color.soap_name();
     let dpi = req.dpi;
     // Firmware sizes are 1/1000 inch. Letter / A4-class platen.
-    let (media_w, media_h) = match req.source {
-        ScanSource::Platen => (8500u32, 11690u32),
-        ScanSource::Adf => (8500u32, 14000u32),
-    };
+    let (media_w, media_h) = req.media_size();
+    let region = req.region_or_full();
     let images = match req.source {
         ScanSource::Platen => 1,
         ScanSource::Adf => 0,
@@ -65,10 +63,10 @@ pub fn create_scan_job_xml(req: &ScanRequest, scan_id: &str) -> String {
 <Height xsi:type="xsd:int">{dpi}</Height>
 </Resolution>
 <ScanRegion xmlns="{WSCN_NS}" xsi:type="ScanRegionType">
-<ScanRegionXOffset xsi:type="xsd:int">0</ScanRegionXOffset>
-<ScanRegionYOffset xsi:type="xsd:int">0</ScanRegionYOffset>
-<ScanRegionHeight xsi:type="xsd:int">{media_h}</ScanRegionHeight>
-<ScanRegionWidth xsi:type="xsd:int">{media_w}</ScanRegionWidth>
+<ScanRegionXOffset xsi:type="xsd:int">{rx}</ScanRegionXOffset>
+<ScanRegionYOffset xsi:type="xsd:int">{ry}</ScanRegionYOffset>
+<ScanRegionHeight xsi:type="xsd:int">{rh}</ScanRegionHeight>
+<ScanRegionWidth xsi:type="xsd:int">{rw}</ScanRegionWidth>
 </ScanRegion>
 <ColorProcessing xsi:type="ColorEntryType">{color}</ColorProcessing>
 </MediaFront>
@@ -77,7 +75,11 @@ pub fn create_scan_job_xml(req: &ScanRequest, scan_id: &str) -> String {
 <RetrieveImageTimeout xsi:type="xsd:int">1800</RetrieveImageTimeout>
 </ScanTicket>
 </wscn:CreateScanJobRequest>{ENVELOPE_CLOSE}"#,
-        id = xml_escape(scan_id)
+        id = xml_escape(scan_id),
+        rx = region.x,
+        ry = region.y,
+        rw = region.width,
+        rh = region.height,
     )
 }
 
@@ -277,14 +279,20 @@ pub fn parse_job_ticket(xml: &str) -> Option<ScanRequest> {
         .unwrap_or(300);
     Some(ScanRequest {
         source: ScanSource::parse(&source).unwrap_or(ScanSource::Platen),
-        color: if color.to_ascii_lowercase().contains("gray") {
-            ColorMode::Gray
-        } else {
-            ColorMode::Color
+        color: {
+            let n = color.to_ascii_lowercase();
+            if n.contains("gray") {
+                ColorMode::Gray
+            } else if n.contains("black") || n.contains("bw") || n.contains("lineart") {
+                ColorMode::Lineart
+            } else {
+                ColorMode::Color
+            }
         },
         dpi,
         format: crate::model::OutputFormat::Jpeg,
         output: None,
+        region: None,
     })
 }
 
@@ -320,6 +328,7 @@ mod tests {
             dpi: 300,
             format: OutputFormat::Jpeg,
             output: None,
+            region: None,
         };
         let xml = create_scan_job_xml(&req, "job-1");
         assert!(xml.contains("CreateScanJobRequest"));

@@ -1,10 +1,12 @@
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::escl;
 use crate::model::{
-    JobProtocol, ProbeResult, DEFAULT_ESCL_PORT, DEFAULT_SOAP_PORT, PRODUCT_NAME,
+    JobProtocol, ProbeResult, DEFAULT_ESCL_PORT, DEFAULT_SOAP_PORT, DEFAULT_WSD_PORT, PRODUCT_NAME,
 };
 use crate::soap;
-use crate::transport::Transport;
+use crate::transport::{HttpRequest, Transport};
+use crate::wsd;
+use std::time::Duration;
 
 /// Probe eSCL capabilities/jobs and the HP SOAP scanner API.
 ///
@@ -50,14 +52,16 @@ pub fn probe_host_ports(
         Err(_) => None,
     };
 
+    let wsd_ok = wsd_alive(transport, &host, DEFAULT_WSD_PORT);
+
     let preferred = if escl_jobs {
         Some(JobProtocol::Escl { port: escl_port })
     } else if soap.is_some() {
         Some(JobProtocol::Soap { port: soap_port })
-    } else if escl_caps {
-        // This firmware answers eSCL caps but not ScanJobs. Jobs are SOAP
-        // on 8289 even when GetScannerElements is temporarily wedged.
-        Some(JobProtocol::Soap { port: soap_port })
+    } else if wsd_ok || escl_caps {
+        // Live M177fw: eSCL caps exist, ScanJobs 404. SOAP 8289 may be
+        // wedged; WSD 3911 still returns dib images.
+        Some(JobProtocol::Wsd { port: DEFAULT_WSD_PORT })
     } else {
         None
     };
@@ -79,8 +83,27 @@ fn soap_caps(
 ) -> Result<crate::model::SoapCapabilities> {
     let url = format!("http://{host}:{port}/");
     let xml = soap::get_scanner_elements_xml();
-    let resp = transport.post(&url, xml.as_bytes(), soap::SOAP_CONTENT_TYPE)?;
+    let req = HttpRequest::post(&url, xml.into_bytes(), soap::SOAP_CONTENT_TYPE)
+        .with_timeout(Duration::from_secs(4));
+    let resp = match transport.execute(req) {
+        Ok(r) => r,
+        Err(Error::Http { detail, .. }) => {
+            return soap::parse_capabilities(&detail);
+        }
+        Err(e) => return Err(e),
+    };
     soap::parse_capabilities(&resp.text())
+}
+
+fn wsd_alive(transport: &dyn Transport, host: &str, port: u16) -> bool {
+    let url = wsd::scanner_url(host, port);
+    let xml = wsd::transfer_get_xml(&url);
+    let req = wsd::request(&url, wsd::ACTION_TRANSFER_GET, xml, Duration::from_secs(4));
+    match transport.execute(req) {
+        Ok(r) => wsd::looks_alive(&r.body),
+        Err(Error::Http { detail, .. }) => wsd::looks_alive(detail.as_bytes()),
+        Err(_) => false,
+    }
 }
 
 /// We must not POST a real ScanJobs during probe (that would start a scan).
