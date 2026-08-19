@@ -89,10 +89,12 @@ open "$HOME/Applications/HP M177 Scanner.app"
 hp-m177-gui
 ```
 
-In the window the left column has Host/IP, **Discover**, **Add scanner**,
-source / color / DPI / format, save path, **Preview**, and **Scan**. The
-right pane is the preview (drag a region after Preview). Files default to
-**Documents**. The Dock icon is a lid-open flatbed scanner.
+The window title is **HP M177 Scanner**. A top row of blue buttons is
+**Discover**, **Add scanner**, **Preview**, and **Scan**. The left column
+has Host/IP, source / color / DPI / format (click to cycle), and the
+Documents save path. The right pane is the preview (drag a region after
+Preview). Files default to **Documents**. The Dock icon is a lid-open
+flatbed scanner.
 
 The same path is scriptable (no clicks):
 

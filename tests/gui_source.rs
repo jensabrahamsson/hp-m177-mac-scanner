@@ -20,7 +20,10 @@ fn rust_gui_calls_shared_add_and_scan() {
 fn appkit_gui_exists_and_invokes_cli() {
     let swift = include_str!("../gui/HP-M177-Scan.swift");
     assert!(swift.contains("NSWindow"), "AppKit window missing");
-    assert!(swift.contains("NSButton"), "AppKit controls missing");
+    assert!(
+        swift.contains("RootView") && swift.contains("drawButton"),
+        "AppKit chrome must paint buttons in the content view draw(_:) (NSButton cells were invisible)"
+    );
     assert!(
         swift.contains("\"add\"") && swift.contains("\"scan\""),
         "Swift GUI must invoke hp-m177 add and scan"
@@ -32,12 +35,16 @@ fn appkit_gui_exists_and_invokes_cli() {
         "GUI must have a preview surface"
     );
     assert!(
-        swift.contains("ControlColumn") && swift.contains("applyChrome"),
-        "control column must use frame-based layout, not a collapsing stack"
+        swift.contains("drawButton") && swift.contains("drawCycle"),
+        "visible chrome must use draw(_:), not NSButton/NSPopUpButton cells"
     );
     assert!(
-        swift.contains("--layout-check"),
-        "native helper must expose --layout-check"
+        swift.contains("--layout-check") && swift.contains("nonWhite"),
+        "native helper must rasterize --layout-check so undrawn buttons fail"
+    );
+    assert!(
+        swift.contains("scan-\\(ts)") && swift.contains("defaultDocumentsPath"),
+        "AppKit default save field must be scan-<unix>.<ext> under Documents"
     );
     assert!(swift.contains("tiff") || swift.contains("TIFF"));
     assert!(swift.contains("lineart") || swift.contains("B/W") || swift.contains("bw"));

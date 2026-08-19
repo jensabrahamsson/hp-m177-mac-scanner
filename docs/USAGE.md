@@ -94,25 +94,29 @@ hp-m177-gui
 
 Spotlight name: **HP M177 Scanner**.
 
-In the window the **left column** has Host/IP, Discover, Add scanner,
-source / color / DPI / format, save path (Documents by default), Preview,
-and Scan. After Preview, drag a rectangle on the right-hand glass image to
-crop. **Add printer (if missing)** only creates an AirPrint queue when none
-exists. The app icon is a flatbed scanner (open lid / glass), not a printer.
+The window title is **HP M177 Scanner**. A top row has **Discover**, **Add
+scanner**, **Preview**, and **Scan**. The left column has Host/IP, source /
+color / DPI / format, and the Documents save path
+(`~/Documents/scan-<unix>.<ext>`). After Preview, drag a rectangle on the
+right-hand glass image to crop. **Add printer (if missing)** only creates an
+AirPrint queue when none exists. The app icon is a flatbed scanner (open lid /
+glass), not a printer.
 
-Developer flags (no window):
+Developer flags:
 
 ```
 hp-m177-gui --headless
 hp-m177-gui --smoke --host HOST --output FILE
 hp-m177-gui --layout-check
+hp-m177-native-gui --smoke --host HOST --output FILE
 ```
 
-`--layout-check` prints Host/Preview/Scan frames and exits 0 only when the
-control column is not collapsed.
+`--layout-check` prints Host/Preview/Scan frames, rasterizes the action bar,
+and exits 0 only when Scan/Discover actually drew pixels (not just frames).
 
-`--smoke` calls `GuiApp::add_scanner` and `GuiApp::scan` (the same functions
-the automated tests call).
+`hp-m177-gui --smoke` calls `GuiApp::add_scanner` and `GuiApp::scan`.
+`hp-m177-native-gui --smoke` is the AppKit helper: real `hp-m177 add` then
+`hp-m177 scan`.
 
 To rebuild only the Swift binary without installing the `.app`:
 

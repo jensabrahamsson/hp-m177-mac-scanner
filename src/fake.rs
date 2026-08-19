@@ -93,6 +93,8 @@ pub struct FakeOptions {
     pub get_job_info_fault: bool,
     /// SOAP RetrieveImage has no image bytes.
     pub retrieve_empty: bool,
+    /// SOAP RetrieveImage returns HTTP 500 (must fall through to WSD).
+    pub retrieve_http_error: bool,
     /// GetScannerElements does not answer (probe falls through to WSD).
     pub soap_dead: bool,
 }
@@ -107,6 +109,7 @@ impl Default for FakeOptions {
             soap_create_fault: false,
             get_job_info_fault: false,
             retrieve_empty: false,
+            retrieve_http_error: false,
             soap_dead: false,
         }
     }
@@ -277,6 +280,9 @@ fn handle(
         return (200, "application/soap+xml; charset=utf-8".into(), xml.into_bytes());
     }
     if body.contains("RetrieveImage") {
+        if opts.retrieve_http_error {
+            return (500, "text/plain".into(), b"retrieve failed".to_vec());
+        }
         let mut st = state.lock().unwrap();
         st.last_retrieve_xml = body.to_string();
         if st.adf_pages_remaining == 0 {

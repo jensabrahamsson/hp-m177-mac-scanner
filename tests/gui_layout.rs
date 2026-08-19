@@ -44,6 +44,10 @@ fn native_helper_layout_check_exposes_host_and_scan() {
         stdout.contains("scan="),
         "layout-check must print Scan button frame: {stdout}"
     );
+    assert!(
+        stdout.contains("nonWhite="),
+        "layout-check must rasterize pixels, not only frames: {stdout}"
+    );
     // Parse host width/height from `hostField=x,y WxH`.
     let host = stdout
         .split("hostField=")
@@ -55,4 +59,33 @@ fn native_helper_layout_check_exposes_host_and_scan() {
     let h: i32 = wh.next().unwrap().parse().unwrap();
     assert!(w >= 200, "host field width {w}");
     assert!(h >= 20, "host field height {h}");
+    let scan = stdout
+        .split("scan=")
+        .nth(1)
+        .and_then(|s| s.split_whitespace().next())
+        .expect("scan origin token");
+    let scan_y: i32 = scan.split(',').nth(1).unwrap().parse().unwrap();
+    let win_h: i32 = stdout
+        .split("window=")
+        .nth(1)
+        .and_then(|s| s.split('x').nth(1))
+        .and_then(|s| s.split_whitespace().next())
+        .unwrap()
+        .parse()
+        .unwrap();
+    assert!(
+        scan_y > win_h * 7 / 10,
+        "Scan button must sit in the top action bar (y={scan_y} window={win_h}): {stdout}"
+    );
+    let non_white: i32 = stdout
+        .split("nonWhite=")
+        .nth(1)
+        .and_then(|s| s.split_whitespace().next())
+        .unwrap()
+        .parse()
+        .unwrap();
+    assert!(
+        non_white >= 30,
+        "Scan/Discover must actually draw pixels (nonWhite={non_white}): {stdout}"
+    );
 }

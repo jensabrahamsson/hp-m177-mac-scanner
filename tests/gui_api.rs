@@ -231,3 +231,55 @@ fn appkit_exec_scan_against_fake() {
     let ticket = fake.last_ticket().unwrap();
     assert_eq!(ticket.source, ScanSource::Platen);
 }
+
+#[test]
+fn appkit_native_smoke_add_and_scans() {
+    let manifest = env!("CARGO_MANIFEST_DIR");
+    let helper = std::path::Path::new(manifest).join("target/hp-m177-native-gui");
+    let src = std::path::Path::new(manifest).join("gui/HP-M177-Scan.swift");
+    let stale = !helper.is_file()
+        || helper.metadata().unwrap().modified().unwrap() < src.metadata().unwrap().modified().unwrap();
+    if stale {
+        let st = std::process::Command::new("sh")
+            .arg("scripts/build-gui.sh")
+            .current_dir(manifest)
+            .status()
+            .expect("build-gui");
+        assert!(st.success(), "swiftc failed");
+    }
+    let fake = FakeDevice::start().unwrap();
+    let n = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let home = std::env::temp_dir().join(format!("hp-m177-native-smoke-{n}"));
+    std::fs::create_dir_all(&home).unwrap();
+    let dest = home.join("native-smoke.jpg");
+    let hp = env!("CARGO_BIN_EXE_hp-m177");
+    let out = std::process::Command::new(&helper)
+        .env("HP_M177_HOME", &home)
+        .env("HP_M177_BIN", hp)
+        .args([
+            "--smoke",
+            "--host",
+            &format!("{}:{}", fake.host(), fake.port()),
+            "--output",
+            dest.to_str().unwrap(),
+        ])
+        .output()
+        .expect("native --smoke");
+    assert!(
+        out.status.success(),
+        "native --smoke: {}{}",
+        String::from_utf8_lossy(&out.stderr),
+        String::from_utf8_lossy(&out.stdout)
+    );
+    assert!(
+        String::from_utf8_lossy(&out.stdout).contains("gui-native-smoke-ok"),
+        "native smoke must print gui-native-smoke-ok: {}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+    assert!(imagefmt::is_jpeg(&std::fs::read(&dest).unwrap()));
+    let ticket = fake.last_ticket().unwrap();
+    assert_eq!(ticket.source, ScanSource::Platen);
+}
