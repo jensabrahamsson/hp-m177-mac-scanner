@@ -94,16 +94,22 @@ hp-m177-gui
 
 Spotlight name: **HP M177 Scanner**.
 
-In the window: **Discover** or type the printer IP → **Add scanner** →
-source / color / DPI / format / output path → **Scan**.
-**Add printer (if missing)** only creates an AirPrint queue when none exists.
+In the window the **left column** has Host/IP, Discover, Add scanner,
+source / color / DPI / format, save path (Documents by default), Preview,
+and Scan. After Preview, drag a rectangle on the right-hand glass image to
+crop. **Add printer (if missing)** only creates an AirPrint queue when none
+exists. The app icon is a flatbed scanner (open lid / glass), not a printer.
 
 Developer flags (no window):
 
 ```
 hp-m177-gui --headless
 hp-m177-gui --smoke --host HOST --output FILE
+hp-m177-gui --layout-check
 ```
+
+`--layout-check` prints Host/Preview/Scan frames and exits 0 only when the
+control column is not collapsed.
 
 `--smoke` calls `GuiApp::add_scanner` and `GuiApp::scan` (the same functions
 the automated tests call).

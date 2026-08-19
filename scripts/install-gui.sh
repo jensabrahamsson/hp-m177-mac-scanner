@@ -23,13 +23,27 @@ chmod +x "${BIN_DIR}/hp-m177-native-gui"
 cat > "${MACOS}/HP-M177-Scan" <<'WRAP'
 #!/bin/bash
 export PATH="${HOME}/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
-export HP_M177_BIN="${HOME}/.cargo/bin/hp-m177"
 HERE="$(cd "$(dirname "$0")" && pwd)"
+if [ -x "${HERE}/hp-m177" ]; then
+  export HP_M177_BIN="${HERE}/hp-m177"
+else
+  export HP_M177_BIN="${HOME}/.cargo/bin/hp-m177"
+fi
 exec "${HERE}/hp-m177-native-gui" "$@"
 WRAP
 chmod +x "${MACOS}/HP-M177-Scan"
 cp target/hp-m177-native-gui "${MACOS}/hp-m177-native-gui"
 chmod +x "${MACOS}/hp-m177-native-gui"
+
+# Bundle the CLI so Finder/Spotlight launches do not depend on PATH.
+if command -v hp-m177 >/dev/null 2>&1; then
+  cp "$(command -v hp-m177)" "${MACOS}/hp-m177"
+elif [ -x "${BIN_DIR}/hp-m177" ]; then
+  cp "${BIN_DIR}/hp-m177" "${MACOS}/hp-m177"
+fi
+if [ -x "${MACOS}/hp-m177" ]; then
+  chmod +x "${MACOS}/hp-m177"
+fi
 
 if [ -f gui/AppIcon.icns ]; then
   cp gui/AppIcon.icns "${RES}/AppIcon.icns"

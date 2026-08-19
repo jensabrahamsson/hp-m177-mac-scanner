@@ -36,7 +36,9 @@ names belong to their owners.
     **WSD Scan** on TCP **3911** (`/scanner`, document format `dib`).
 11. **GUI automation** with no clicks: `hp-m177-gui add|scan|list` and the
     AppKit helper `--exec add|scan|discover`.
-12. **Custom Mac app icon** (`gui/AppIcon.icns`, `CFBundleIconFile=AppIcon`).
+12. **Custom Mac app icon** of a **flatbed scanner** (open lid, glass platen),
+    not a printer with an output tray (`gui/AppIcon.icns`,
+    `CFBundleIconFile=AppIcon`).
 13. **MIT** license. English docs and code comments.
 
 ## Out of scope

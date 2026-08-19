@@ -26,6 +26,9 @@ struct Args {
     /// Stay running without opening a window (used to assert the binary lives).
     #[arg(long)]
     headless: bool,
+    /// Ask the AppKit helper to print control frames and exit (no clicks).
+    #[arg(long)]
+    layout_check: bool,
     #[command(subcommand)]
     cmd: Option<GuiCmd>,
 }
@@ -96,10 +99,22 @@ fn main() {
         return;
     }
 
+    if args.layout_check {
+        match spawn_native(&["--layout-check"]) {
+            Ok(code) => std::process::exit(code),
+            Err(e) => {
+                eprintln!("hp-m177-gui: {e}");
+                std::process::exit(1);
+            }
+        }
+    }
+
     if let Some(helper) = find_native_gui() {
-        let status = Command::new(helper).status();
-        if let Ok(s) = status {
-            std::process::exit(s.code().unwrap_or(1));
+        let mut cmd = Command::new(&helper);
+        apply_gui_env(&mut cmd);
+        match cmd.status() {
+            Ok(s) => std::process::exit(s.code().unwrap_or(1)),
+            Err(e) => eprintln!("hp-m177-gui: native helper {}: {e}", helper.display()),
         }
     }
 
@@ -155,15 +170,12 @@ fn run_api(cmd: GuiCmd) -> hp_m177::Result<i32> {
             }
         }
         GuiCmd::Exec { args } => {
-            if let Some(helper) = find_native_gui() {
-                let status = Command::new(&helper)
-                    .arg("--exec")
-                    .args(&args)
-                    .status()
-                    .map_err(|e| hp_m177::Error::msg(format!("native gui: {e}")))?;
-                return Ok(status.code().unwrap_or(1));
+            let mut forwarded = vec!["--exec".to_string()];
+            forwarded.extend(args.iter().cloned());
+            match spawn_native(&forwarded.iter().map(|s| s.as_str()).collect::<Vec<_>>()) {
+                Ok(code) => return Ok(code),
+                Err(_) => return run_api(parse_exec_fallback(&args)?),
             }
-            return run_api(parse_exec_fallback(&args)?);
         }
     }
     Ok(0)
@@ -234,6 +246,42 @@ fn parse_exec_fallback(args: &[String]) -> hp_m177::Result<GuiCmd> {
         other => Err(hp_m177::Error::msg(format!(
             "unknown exec verb '{other}' (use add|scan|list)"
         ))),
+    }
+}
+
+fn spawn_native(args: &[&str]) -> hp_m177::Result<i32> {
+    let helper = find_native_gui().ok_or_else(|| {
+        hp_m177::Error::msg("native AppKit helper not found; run ./scripts/install-gui.sh")
+    })?;
+    let mut cmd = Command::new(&helper);
+    cmd.args(args);
+    apply_gui_env(&mut cmd);
+    let status = cmd
+        .status()
+        .map_err(|e| hp_m177::Error::msg(format!("native gui {}: {e}", helper.display())))?;
+    Ok(status.code().unwrap_or(1))
+}
+
+fn apply_gui_env(cmd: &mut Command) {
+    let mut bin = None;
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            let p = dir.join("hp-m177");
+            if p.is_file() {
+                bin = Some(p);
+            }
+        }
+    }
+    if bin.is_none() {
+        if let Some(home) = std::env::var_os("HOME") {
+            let p = PathBuf::from(home).join(".cargo/bin/hp-m177");
+            if p.is_file() {
+                bin = Some(p);
+            }
+        }
+    }
+    if let Some(p) = bin {
+        cmd.env("HP_M177_BIN", p);
     }
 }
 

@@ -26,6 +26,11 @@ app.setActivationPolicy(.regular)
 app.delegate = delegate
 app.run()
 
+/// Top-down coordinates so the control column cannot sit at y=0 and vanish.
+final class FlippedView: NSView {
+    override var isFlipped: Bool { true }
+}
+
 final class PreviewView: NSView {
     var image: NSImage? {
         didSet { needsDisplay = true }
@@ -137,6 +142,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let status = NSTextField(labelWithString: "Add the scanner by IP or hostname, then Preview or Scan.")
     let logView = NSTextView()
     let preview = PreviewView()
+    let addButton = NSButton()
+    let discoverButton = NSButton()
+    let previewButton = NSButton()
+    let scanButton = NSButton()
     var lastExit: Int32 = 0
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -168,15 +177,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         outputField.stringValue = docs.appendingPathComponent("scan.jpg").path
         outputField.placeholderString = "~/Documents/scan.jpg"
 
-        let add = button("Add scanner", #selector(addScanner))
-        let discover = button("Discover", #selector(discover))
+        configure(addButton, title: "Add scanner", action: #selector(addScanner))
+        configure(discoverButton, title: "Discover", action: #selector(discoverLan))
         let addPrinter = button("Add printer if missing", #selector(addPrinter))
-        let previewBtn = button("Preview", #selector(runPreview))
-        previewBtn.keyEquivalent = "p"
-        let scan = button("Scan", #selector(runScan))
-        scan.keyEquivalent = "\r"
-        scan.bezelStyle = .rounded
-        scan.setButtonType(.momentaryPushIn)
+        configure(previewButton, title: "Preview", action: #selector(runPreview))
+        previewButton.keyEquivalent = "p"
+        configure(scanButton, title: "Scan", action: #selector(runScan))
+        scanButton.keyEquivalent = "\r"
 
         status.isEditable = false
         status.isBezeled = false
@@ -190,13 +197,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         logView.font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
         logView.backgroundColor = NSColor.textBackgroundColor
 
-        let left = NSView()
+        let left = FlippedView()
         left.translatesAutoresizingMaskIntoConstraints = false
+        left.wantsLayer = true
+        left.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
         let stacked = [
             heading("Device"),
             label("Host / IP"),
             hostField,
-            row([discover, add]),
+            row([discoverButton, addButton]),
             addPrinter,
             heading("Scan"),
             row([label("Source"), sourcePopup]),
@@ -205,7 +214,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             row([label("Format"), formatPopup]),
             label("Save to Documents"),
             outputField,
-            row([previewBtn, scan]),
+            row([previewButton, scanButton]),
             status,
         ]
         pinVertical(stacked, in: left, inset: 16)
@@ -254,11 +263,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         content.layoutSubtreeIfNeeded()
         window.layoutIfNeeded()
         if CommandLine.arguments.contains("--layout-check") {
-            let hf = hostField.frame
-            let pv = preview.frame
-            let report = "hostField=\(Int(hf.minX)),\(Int(hf.minY)) \(Int(hf.width))x\(Int(hf.height)) preview=\(Int(pv.minX)),\(Int(pv.minY)) \(Int(pv.width))x\(Int(pv.height)) window=\(Int(content.bounds.width))x\(Int(content.bounds.height))\n"
+            let hf = hostField.convert(hostField.bounds, to: content)
+            let pv = preview.convert(preview.bounds, to: content)
+            let scan = scanButton.convert(scanButton.bounds, to: content)
+            let disc = discoverButton.convert(discoverButton.bounds, to: content)
+            let report = "hostField=\(Int(hf.minX)),\(Int(hf.minY)) \(Int(hf.width))x\(Int(hf.height)) preview=\(Int(pv.minX)),\(Int(pv.minY)) \(Int(pv.width))x\(Int(pv.height)) scan=\(Int(scan.minX)),\(Int(scan.minY)) \(Int(scan.width))x\(Int(scan.height)) discover=\(Int(disc.minX)),\(Int(disc.minY)) \(Int(disc.width))x\(Int(disc.height)) window=\(Int(content.bounds.width))x\(Int(content.bounds.height))\n"
             FileHandle.standardOutput.write(Data(report.utf8))
-            let ok = hf.height >= 20 && hf.width >= 200 && hf.minX < 80 && pv.minX >= 350
+            let ok = hf.height >= 20 && hf.width >= 200 && hf.minX < 80
+                && pv.minX >= hf.maxX
+                && scan.height >= 20 && scan.width >= 40
+                && disc.height >= 20 && disc.width >= 40
             exit(ok ? 0 : 1)
         }
 
@@ -358,7 +372,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         runHp(["add", host])
     }
 
-    @objc func discover() {
+    @objc func discoverLan() {
         runHp(["discover", "--timeout", "3"])
     }
 
@@ -454,11 +468,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func bundledBinary() -> String? {
         let here = Bundle.main.bundlePath
-        let sibling = (here as NSString).deletingLastPathComponent + "/hp-m177"
-        let cargo = NSHomeDirectory() + "/.cargo/bin/hp-m177"
-        if FileManager.default.isExecutableFile(atPath: sibling) { return sibling }
-        if FileManager.default.isExecutableFile(atPath: cargo) { return cargo }
-        return nil
+        let candidates = [
+            here + "/Contents/MacOS/hp-m177",
+            (here as NSString).appendingPathComponent("hp-m177"),
+            (here as NSString).deletingLastPathComponent + "/hp-m177",
+            NSHomeDirectory() + "/.cargo/bin/hp-m177",
+        ]
+        return candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
     }
 
     func which(_ name: String) -> String {
@@ -490,9 +506,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func button(_ title: String, _ sel: Selector) -> NSButton {
         let b = NSButton(title: title, target: self, action: sel)
-        b.bezelStyle = .rounded
-        b.setContentHuggingPriority(.defaultHigh, for: .vertical)
+        configure(b, title: title, action: sel)
         return b
+    }
+
+    func configure(_ b: NSButton, title: String, action: Selector) {
+        b.title = title
+        b.target = self
+        b.action = action
+        b.bezelStyle = .rounded
+        b.setButtonType(.momentaryPushIn)
+        b.setContentHuggingPriority(.defaultHigh, for: .vertical)
     }
 
     func styleField(_ field: NSTextField) {

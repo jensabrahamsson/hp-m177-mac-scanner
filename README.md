@@ -78,7 +78,7 @@ That builds the AppKit app and installs:
 
 | Location | What |
 | --- | --- |
-| `~/Applications/HP M177 Scanner.app` | Spotlight / Dock / Finder |
+| `~/Applications/HP M177 Scanner.app` | Spotlight / Dock / Finder (scanner icns, not a printer) |
 | `~/.cargo/bin/hp-m177-native-gui` | same binary; `hp-m177-gui` finds it automatically |
 
 Open it from Spotlight (**HP M177 Scanner**), or:
@@ -89,8 +89,10 @@ open "$HOME/Applications/HP M177 Scanner.app"
 hp-m177-gui
 ```
 
-In the window: host/IP → **Add scanner** → **Preview** (optional region) →
-source / color / DPI / format → **Scan**. Files default to **Documents**.
+In the window the left column has Host/IP, **Discover**, **Add scanner**,
+source / color / DPI / format, save path, **Preview**, and **Scan**. The
+right pane is the preview (drag a region after Preview). Files default to
+**Documents**. The Dock icon is a lid-open flatbed scanner.
 
 The same path is scriptable (no clicks):
 

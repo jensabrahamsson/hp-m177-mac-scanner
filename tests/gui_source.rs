@@ -32,8 +32,12 @@ fn appkit_gui_exists_and_invokes_cli() {
         "GUI must have a preview surface"
     );
     assert!(
-        swift.contains("pinVertical"),
-        "control column must use a non-collapsing vertical layout"
+        swift.contains("pinVertical") && swift.contains("FlippedView"),
+        "control column must use a non-collapsing flipped layout"
+    );
+    assert!(
+        swift.contains("--layout-check"),
+        "native helper must expose --layout-check"
     );
     assert!(swift.contains("tiff") || swift.contains("TIFF"));
     assert!(swift.contains("lineart") || swift.contains("B/W") || swift.contains("bw"));
@@ -53,4 +57,8 @@ fn app_icon_is_declared_and_present() {
     assert!(install.contains("AppIcon.icns"));
     assert!(install.contains("CFBundleIconFile"));
     assert!(install.contains("AppIcon"));
+    assert!(
+        install.contains("setIcon") || install.contains("AppIcon.icns"),
+        "install-gui.sh must install the icns"
+    );
 }
