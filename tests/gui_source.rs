@@ -32,8 +32,8 @@ fn appkit_gui_exists_and_invokes_cli() {
         "GUI must have a preview surface"
     );
     assert!(
-        swift.contains("pinVertical") && swift.contains("FlippedView"),
-        "control column must use a non-collapsing flipped layout"
+        swift.contains("ControlColumn") && swift.contains("applyChrome"),
+        "control column must use frame-based layout, not a collapsing stack"
     );
     assert!(
         swift.contains("--layout-check"),

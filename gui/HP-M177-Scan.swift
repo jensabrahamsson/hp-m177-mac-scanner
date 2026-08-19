@@ -26,9 +26,61 @@ app.setActivationPolicy(.regular)
 app.delegate = delegate
 app.run()
 
-/// Top-down coordinates so the control column cannot sit at y=0 and vanish.
-final class FlippedView: NSView {
+/// Top-down coordinates so controls stack from the top of the column.
+class FlippedView: NSView {
     override var isFlipped: Bool { true }
+}
+
+/// Frame-based column. Auto Layout previously reported frames but drew nothing.
+final class ControlColumn: FlippedView {
+    var items: [NSView] = []
+
+    override func layout() {
+        super.layout()
+        var y: CGFloat = 16
+        let x: CGFloat = 16
+        let w = max(bounds.width - 32, 80)
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
+        for v in items {
+            let h: CGFloat
+            if let tf = v as? NSTextField, tf.isEditable {
+                h = 24
+            } else if v is RowStrip {
+                h = 32
+            } else if v is NSButton || v is NSPopUpButton {
+                h = 32
+            } else if v is NSTextField {
+                h = 18
+            } else {
+                h = 24
+            }
+            v.frame = NSRect(x: x, y: y, width: w, height: h)
+            y += h + 8
+        }
+    }
+}
+
+final class RowStrip: NSView {
+    let views: [NSView]
+    init(_ views: [NSView]) {
+        self.views = views
+        super.init(frame: .zero)
+        for v in views {
+            v.translatesAutoresizingMaskIntoConstraints = true
+            addSubview(v)
+        }
+    }
+    required init?(coder: NSCoder) { fatalError() }
+    override func layout() {
+        super.layout()
+        let gap: CGFloat = 8
+        let n = max(CGFloat(views.count), 1)
+        let w = max((bounds.width - gap * (n - 1)) / n, 40)
+        for (i, v) in views.enumerated() {
+            v.frame = NSRect(x: CGFloat(i) * (w + gap), y: 0, width: w, height: bounds.height)
+        }
+    }
 }
 
 final class PreviewView: NSView {
@@ -131,7 +183,7 @@ final class PreviewView: NSView {
     }
 }
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     var window: NSWindow!
     let hostField = NSTextField(string: "")
     let sourcePopup = NSPopUpButton()
@@ -142,10 +194,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let status = NSTextField(labelWithString: "Add the scanner by IP or hostname, then Preview or Scan.")
     let logView = NSTextView()
     let preview = PreviewView()
-    let addButton = NSButton()
-    let discoverButton = NSButton()
-    let previewButton = NSButton()
-    let scanButton = NSButton()
+    let left = ControlColumn()
+    let scroll = NSScrollView()
+    var addButton: NSButton!
+    var discoverButton: NSButton!
+    var previewButton: NSButton!
+    var scanButton: NSButton!
+    var addPrinterButton: NSButton!
     var lastExit: Int32 = 0
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -159,6 +214,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.title = "M177fw Scanner"
         window.contentView = content
         window.minSize = NSSize(width: 860, height: 560)
+        window.delegate = self
 
         styleField(hostField)
         hostField.placeholderString = "192.168.50.14 or DEV26BA77.local"
@@ -177,12 +233,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         outputField.stringValue = docs.appendingPathComponent("scan.jpg").path
         outputField.placeholderString = "~/Documents/scan.jpg"
 
-        configure(addButton, title: "Add scanner", action: #selector(addScanner))
-        configure(discoverButton, title: "Discover", action: #selector(discoverLan))
-        let addPrinter = button("Add printer if missing", #selector(addPrinter))
-        configure(previewButton, title: "Preview", action: #selector(runPreview))
+        addButton = pushButton("Add scanner", #selector(addScanner))
+        discoverButton = pushButton("Discover", #selector(discoverLan))
+        addPrinterButton = pushButton("Add printer if missing", #selector(addPrinter))
+        previewButton = pushButton("Preview", #selector(runPreview))
         previewButton.keyEquivalent = "p"
-        configure(scanButton, title: "Scan", action: #selector(runScan))
+        scanButton = pushButton("Scan", #selector(runScan))
         scanButton.keyEquivalent = "\r"
 
         status.isEditable = false
@@ -190,39 +246,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         status.drawsBackground = false
         status.lineBreakMode = .byWordWrapping
         status.maximumNumberOfLines = 4
-        status.preferredMaxLayoutWidth = 328
         status.font = NSFont.systemFont(ofSize: 12)
         status.textColor = NSColor.secondaryLabelColor
         logView.isEditable = false
         logView.font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
         logView.backgroundColor = NSColor.textBackgroundColor
-
-        let left = FlippedView()
-        left.translatesAutoresizingMaskIntoConstraints = false
-        left.wantsLayer = true
-        left.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
-        let stacked = [
-            heading("Device"),
-            label("Host / IP"),
-            hostField,
-            row([discoverButton, addButton]),
-            addPrinter,
-            heading("Scan"),
-            row([label("Source"), sourcePopup]),
-            row([label("Color"), colorPopup]),
-            row([label("DPI"), dpiPopup]),
-            row([label("Format"), formatPopup]),
-            label("Save to Documents"),
-            outputField,
-            row([previewButton, scanButton]),
-            status,
-        ]
-        pinVertical(stacked, in: left, inset: 16)
-
-        preview.translatesAutoresizingMaskIntoConstraints = false
-        preview.wantsLayer = true
-
-        let scroll = NSScrollView(frame: .zero)
         logView.minSize = NSSize(width: 0, height: 0)
         logView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         logView.isHorizontallyResizable = false
@@ -231,46 +259,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         logView.textContainer?.widthTracksTextView = true
         scroll.documentView = logView
         scroll.hasVerticalScroller = true
-        scroll.translatesAutoresizingMaskIntoConstraints = false
         scroll.borderType = .bezelBorder
+        scroll.autoresizingMask = [.width]
 
+        left.items = [
+            heading("Device"),
+            label("Host / IP"),
+            hostField,
+            RowStrip([discoverButton, addButton]),
+            addPrinterButton,
+            heading("Scan"),
+            RowStrip([label("Source"), sourcePopup]),
+            RowStrip([label("Color"), colorPopup]),
+            RowStrip([label("DPI"), dpiPopup]),
+            RowStrip([label("Format"), formatPopup]),
+            label("Save to Documents"),
+            outputField,
+            RowStrip([previewButton, scanButton]),
+            status,
+        ]
+        for v in left.items {
+            v.translatesAutoresizingMaskIntoConstraints = true
+            left.addSubview(v)
+        }
+
+        preview.wantsLayer = true
         content.addSubview(left)
         content.addSubview(preview)
         content.addSubview(scroll)
+        applyChrome()
 
-        NSLayoutConstraint.activate([
-            left.topAnchor.constraint(equalTo: content.topAnchor),
-            left.leadingAnchor.constraint(equalTo: content.leadingAnchor),
-            left.widthAnchor.constraint(equalToConstant: 360),
-            left.bottomAnchor.constraint(equalTo: scroll.topAnchor),
-
-            hostField.heightAnchor.constraint(equalToConstant: 24),
-            outputField.heightAnchor.constraint(equalToConstant: 24),
-            hostField.widthAnchor.constraint(equalTo: left.widthAnchor, constant: -32),
-            outputField.widthAnchor.constraint(equalTo: left.widthAnchor, constant: -32),
-
-            preview.topAnchor.constraint(equalTo: content.topAnchor, constant: 16),
-            preview.leadingAnchor.constraint(equalTo: left.trailingAnchor, constant: 8),
-            preview.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -16),
-            preview.bottomAnchor.constraint(equalTo: scroll.topAnchor, constant: -12),
-
-            scroll.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 16),
-            scroll.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -16),
-            scroll.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -16),
-            scroll.heightAnchor.constraint(equalToConstant: 110),
-        ])
-
-        content.layoutSubtreeIfNeeded()
-        window.layoutIfNeeded()
         if CommandLine.arguments.contains("--layout-check") {
+            left.layoutSubtreeIfNeeded()
             let hf = hostField.convert(hostField.bounds, to: content)
             let pv = preview.convert(preview.bounds, to: content)
             let scan = scanButton.convert(scanButton.bounds, to: content)
             let disc = discoverButton.convert(discoverButton.bounds, to: content)
             let report = "hostField=\(Int(hf.minX)),\(Int(hf.minY)) \(Int(hf.width))x\(Int(hf.height)) preview=\(Int(pv.minX)),\(Int(pv.minY)) \(Int(pv.width))x\(Int(pv.height)) scan=\(Int(scan.minX)),\(Int(scan.minY)) \(Int(scan.width))x\(Int(scan.height)) discover=\(Int(disc.minX)),\(Int(disc.minY)) \(Int(disc.width))x\(Int(disc.height)) window=\(Int(content.bounds.width))x\(Int(content.bounds.height))\n"
             FileHandle.standardOutput.write(Data(report.utf8))
-            let ok = hf.height >= 20 && hf.width >= 200 && hf.minX < 80
-                && pv.minX >= hf.maxX
+            let ok = hf.height >= 20 && hf.width >= 80 && hf.minX < 80
+                && pv.minX >= 300
                 && scan.height >= 20 && scan.width >= 40
                 && disc.height >= 20 && disc.width >= 40
             exit(ok ? 0 : 1)
@@ -281,6 +309,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+
+    func windowDidResize(_ notification: Notification) {
+        applyChrome()
+    }
+
+    func applyChrome() {
+        guard let content = window.contentView else { return }
+        let b = content.bounds
+        let logH: CGFloat = 110
+        let leftW: CGFloat = 340
+        let pad: CGFloat = 16
+        scroll.frame = NSRect(x: pad, y: pad, width: b.width - pad * 2, height: logH)
+        let topY = pad + logH + 12
+        let topH = max(b.height - topY - 8, 200)
+        left.frame = NSRect(x: 0, y: topY, width: leftW, height: topH)
+        preview.frame = NSRect(x: leftW + 8, y: topY, width: max(b.width - leftW - 8 - pad, 200), height: topH)
+        left.needsLayout = true
+        left.layoutSubtreeIfNeeded()
+    }
 
     @objc func formatChanged() {
         let ext = formatPopup.titleOfSelectedItem ?? "jpeg"
@@ -504,19 +551,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return l
     }
 
-    func button(_ title: String, _ sel: Selector) -> NSButton {
+    func pushButton(_ title: String, _ sel: Selector) -> NSButton {
         let b = NSButton(title: title, target: self, action: sel)
-        configure(b, title: title, action: sel)
-        return b
-    }
-
-    func configure(_ b: NSButton, title: String, action: Selector) {
-        b.title = title
-        b.target = self
-        b.action = action
         b.bezelStyle = .rounded
         b.setButtonType(.momentaryPushIn)
-        b.setContentHuggingPriority(.defaultHigh, for: .vertical)
+        b.translatesAutoresizingMaskIntoConstraints = true
+        return b
     }
 
     func styleField(_ field: NSTextField) {
@@ -533,36 +573,4 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         popup.setContentHuggingPriority(.defaultHigh, for: .horizontal)
     }
 
-    func row(_ views: [NSView]) -> NSStackView {
-        let s = NSStackView(views: views)
-        s.orientation = .horizontal
-        s.alignment = .centerY
-        s.spacing = 8
-        s.detachesHiddenViews = false
-        s.setHuggingPriority(.required, for: .vertical)
-        s.setClippingResistancePriority(.required, for: .vertical)
-        s.translatesAutoresizingMaskIntoConstraints = false
-        s.heightAnchor.constraint(greaterThanOrEqualToConstant: 24).isActive = true
-        return s
-    }
-
-    /// Vertical layout that cannot collapse to zero height (NSStackView did).
-    func pinVertical(_ views: [NSView], in parent: NSView, inset: CGFloat) {
-        var previous: NSView?
-        for view in views {
-            view.translatesAutoresizingMaskIntoConstraints = false
-            parent.addSubview(view)
-            NSLayoutConstraint.activate([
-                view.leadingAnchor.constraint(equalTo: parent.leadingAnchor, constant: inset),
-                view.trailingAnchor.constraint(lessThanOrEqualTo: parent.trailingAnchor, constant: -inset),
-            ])
-            if let prev = previous {
-                let gap: CGFloat = (view is NSTextField && (view as? NSTextField)?.font == NSFont.boldSystemFont(ofSize: 13)) ? 16 : 6
-                view.topAnchor.constraint(equalTo: prev.bottomAnchor, constant: gap).isActive = true
-            } else {
-                view.topAnchor.constraint(equalTo: parent.topAnchor, constant: inset).isActive = true
-            }
-            previous = view
-        }
-    }
 }
