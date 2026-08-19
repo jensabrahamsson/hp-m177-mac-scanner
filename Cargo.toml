@@ -5,7 +5,7 @@ edition = "2021"
 rust-version = "1.74"
 description = "Scan client, CLI, native Mac GUI, and local eSCL/AirScan bridge for the HP Color LaserJet Pro MFP M177fw"
 license = "MIT"
-authors = ["hp-m177 contributors"]
+authors = ["Jens Abrahamsson"]
 readme = "README.md"
 default-run = "hp-m177"
 

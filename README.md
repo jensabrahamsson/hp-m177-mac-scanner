@@ -3,6 +3,20 @@
 Scan client for the **HP Color LaserJet Pro MFP M177fw** on a Mac, designed to
 **coexist with the working AirPrint print queue**.
 
+## Not an HP project
+
+This is **not** an HP product, driver, or official tool. I have **no
+affiliation, sponsorship, or endorsement** from HP, Hewlett-Packard, or HP
+Inc. I am a private person who was frustrated that printing from this Mac
+worked and scanning did not.
+
+“HP”, “LaserJet”, and related names belong to their owners. This repository
+only talks the network protocols the printer already exposes on the LAN.
+
+## License
+
+[MIT](LICENSE). Use it, fork it, break it, fix it. No warranty.
+
 Apple Image Capture does not see this 2014 MFP as a network scanner: the
 firmware advertises `_ipp._tcp` (print) and `_scanner._tcp` → port **8289**
 (HP SOAP), but **not** `_uscan._tcp` (eSCL / AirScan). It also serves

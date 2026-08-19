@@ -1,5 +1,7 @@
 # Usage
 
+This project is independent of HP. See the README disclaimer.
+
 ## Configuration
 
 | Variable | Meaning |
