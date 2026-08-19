@@ -31,6 +31,10 @@ fn appkit_gui_exists_and_invokes_cli() {
         swift.contains("PreviewView") || swift.contains("preview"),
         "GUI must have a preview surface"
     );
+    assert!(
+        swift.contains("pinVertical"),
+        "control column must use a non-collapsing vertical layout"
+    );
     assert!(swift.contains("tiff") || swift.contains("TIFF"));
     assert!(swift.contains("lineart") || swift.contains("B/W") || swift.contains("bw"));
 }

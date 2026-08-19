@@ -149,84 +149,118 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         window.title = "M177fw Scanner"
         window.contentView = content
-        window.minSize = NSSize(width: 820, height: 520)
+        window.minSize = NSSize(width: 860, height: 560)
 
+        styleField(hostField)
         hostField.placeholderString = "192.168.50.14 or DEV26BA77.local"
-        sourcePopup.addItems(withTitles: ["platen", "adf"])
-        colorPopup.addItems(withTitles: ["color", "gray", "lineart"])
-        dpiPopup.addItems(withTitles: ["100", "300", "600"])
+        hostField.stringValue = "192.168.50.14"
+        stylePopup(sourcePopup, titles: ["platen", "adf"])
+        stylePopup(colorPopup, titles: ["color", "gray", "lineart"])
+        stylePopup(dpiPopup, titles: ["100", "300", "600"])
         dpiPopup.selectItem(withTitle: "300")
-        formatPopup.addItems(withTitles: ["jpeg", "pdf", "tiff"])
+        stylePopup(formatPopup, titles: ["jpeg", "pdf", "tiff"])
         formatPopup.target = self
         formatPopup.action = #selector(formatChanged)
 
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Documents")
+        styleField(outputField)
         outputField.stringValue = docs.appendingPathComponent("scan.jpg").path
         outputField.placeholderString = "~/Documents/scan.jpg"
 
-        let add = NSButton(title: "Add scanner", target: self, action: #selector(addScanner))
-        let discover = NSButton(title: "Discover", target: self, action: #selector(discover))
-        let addPrinter = NSButton(title: "Add printer if missing", target: self, action: #selector(addPrinter))
-        let previewBtn = NSButton(title: "Preview", target: self, action: #selector(runPreview))
+        let add = button("Add scanner", #selector(addScanner))
+        let discover = button("Discover", #selector(discover))
+        let addPrinter = button("Add printer if missing", #selector(addPrinter))
+        let previewBtn = button("Preview", #selector(runPreview))
         previewBtn.keyEquivalent = "p"
-        let scan = NSButton(title: "Scan", target: self, action: #selector(runScan))
+        let scan = button("Scan", #selector(runScan))
         scan.keyEquivalent = "\r"
         scan.bezelStyle = .rounded
+        scan.setButtonType(.momentaryPushIn)
 
         status.isEditable = false
+        status.isBezeled = false
+        status.drawsBackground = false
         status.lineBreakMode = .byWordWrapping
-        status.maximumNumberOfLines = 3
+        status.maximumNumberOfLines = 4
+        status.preferredMaxLayoutWidth = 328
+        status.font = NSFont.systemFont(ofSize: 12)
+        status.textColor = NSColor.secondaryLabelColor
         logView.isEditable = false
         logView.font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
         logView.backgroundColor = NSColor.textBackgroundColor
 
-        let controls = NSStackView(views: [
+        let left = NSView()
+        left.translatesAutoresizingMaskIntoConstraints = false
+        let stacked = [
             heading("Device"),
-            label("Host / IP"), hostField,
-            row([discover, add, addPrinter]),
+            label("Host / IP"),
+            hostField,
+            row([discover, add]),
+            addPrinter,
             heading("Scan"),
-            row([label("Source"), sourcePopup, label("Color"), colorPopup]),
-            row([label("DPI"), dpiPopup, label("Format"), formatPopup]),
-            label("Save to (Documents by default)"), outputField,
+            row([label("Source"), sourcePopup]),
+            row([label("Color"), colorPopup]),
+            row([label("DPI"), dpiPopup]),
+            row([label("Format"), formatPopup]),
+            label("Save to Documents"),
+            outputField,
             row([previewBtn, scan]),
             status,
-        ])
-        controls.orientation = .vertical
-        controls.alignment = .leading
-        controls.spacing = 8
-        controls.translatesAutoresizingMaskIntoConstraints = false
+        ]
+        pinVertical(stacked, in: left, inset: 16)
 
         preview.translatesAutoresizingMaskIntoConstraints = false
         preview.wantsLayer = true
 
         let scroll = NSScrollView(frame: .zero)
+        logView.minSize = NSSize(width: 0, height: 0)
+        logView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        logView.isHorizontallyResizable = false
+        logView.isVerticallyResizable = true
+        logView.autoresizingMask = [.width]
+        logView.textContainer?.widthTracksTextView = true
         scroll.documentView = logView
         scroll.hasVerticalScroller = true
         scroll.translatesAutoresizingMaskIntoConstraints = false
         scroll.borderType = .bezelBorder
 
-        content.addSubview(controls)
+        content.addSubview(left)
         content.addSubview(preview)
         content.addSubview(scroll)
 
         NSLayoutConstraint.activate([
-            controls.topAnchor.constraint(equalTo: content.topAnchor, constant: 16),
-            controls.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 16),
-            controls.widthAnchor.constraint(equalToConstant: 340),
-            hostField.widthAnchor.constraint(equalTo: controls.widthAnchor),
-            outputField.widthAnchor.constraint(equalTo: controls.widthAnchor),
+            left.topAnchor.constraint(equalTo: content.topAnchor),
+            left.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            left.widthAnchor.constraint(equalToConstant: 360),
+            left.bottomAnchor.constraint(equalTo: scroll.topAnchor),
+
+            hostField.heightAnchor.constraint(equalToConstant: 24),
+            outputField.heightAnchor.constraint(equalToConstant: 24),
+            hostField.widthAnchor.constraint(equalTo: left.widthAnchor, constant: -32),
+            outputField.widthAnchor.constraint(equalTo: left.widthAnchor, constant: -32),
 
             preview.topAnchor.constraint(equalTo: content.topAnchor, constant: 16),
-            preview.leadingAnchor.constraint(equalTo: controls.trailingAnchor, constant: 16),
+            preview.leadingAnchor.constraint(equalTo: left.trailingAnchor, constant: 8),
             preview.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -16),
             preview.bottomAnchor.constraint(equalTo: scroll.topAnchor, constant: -12),
 
             scroll.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 16),
             scroll.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -16),
             scroll.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -16),
-            scroll.heightAnchor.constraint(equalToConstant: 120),
+            scroll.heightAnchor.constraint(equalToConstant: 110),
         ])
+
+        content.layoutSubtreeIfNeeded()
+        window.layoutIfNeeded()
+        if CommandLine.arguments.contains("--layout-check") {
+            let hf = hostField.frame
+            let pv = preview.frame
+            let report = "hostField=\(Int(hf.minX)),\(Int(hf.minY)) \(Int(hf.width))x\(Int(hf.height)) preview=\(Int(pv.minX)),\(Int(pv.minY)) \(Int(pv.width))x\(Int(pv.height)) window=\(Int(content.bounds.width))x\(Int(content.bounds.height))\n"
+            FileHandle.standardOutput.write(Data(report.utf8))
+            let ok = hf.height >= 20 && hf.width >= 200 && hf.minX < 80 && pv.minX >= 350
+            exit(ok ? 0 : 1)
+        }
 
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
@@ -454,10 +488,57 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return l
     }
 
+    func button(_ title: String, _ sel: Selector) -> NSButton {
+        let b = NSButton(title: title, target: self, action: sel)
+        b.bezelStyle = .rounded
+        b.setContentHuggingPriority(.defaultHigh, for: .vertical)
+        return b
+    }
+
+    func styleField(_ field: NSTextField) {
+        field.isEditable = true
+        field.isBezeled = true
+        field.bezelStyle = .squareBezel
+        field.font = NSFont.systemFont(ofSize: 13)
+        field.setContentHuggingPriority(.defaultLow, for: .horizontal)
+    }
+
+    func stylePopup(_ popup: NSPopUpButton, titles: [String]) {
+        popup.addItems(withTitles: titles)
+        popup.bezelStyle = .rounded
+        popup.setContentHuggingPriority(.defaultHigh, for: .horizontal)
+    }
+
     func row(_ views: [NSView]) -> NSStackView {
         let s = NSStackView(views: views)
         s.orientation = .horizontal
+        s.alignment = .centerY
         s.spacing = 8
+        s.detachesHiddenViews = false
+        s.setHuggingPriority(.required, for: .vertical)
+        s.setClippingResistancePriority(.required, for: .vertical)
+        s.translatesAutoresizingMaskIntoConstraints = false
+        s.heightAnchor.constraint(greaterThanOrEqualToConstant: 24).isActive = true
         return s
+    }
+
+    /// Vertical layout that cannot collapse to zero height (NSStackView did).
+    func pinVertical(_ views: [NSView], in parent: NSView, inset: CGFloat) {
+        var previous: NSView?
+        for view in views {
+            view.translatesAutoresizingMaskIntoConstraints = false
+            parent.addSubview(view)
+            NSLayoutConstraint.activate([
+                view.leadingAnchor.constraint(equalTo: parent.leadingAnchor, constant: inset),
+                view.trailingAnchor.constraint(lessThanOrEqualTo: parent.trailingAnchor, constant: -inset),
+            ])
+            if let prev = previous {
+                let gap: CGFloat = (view is NSTextField && (view as? NSTextField)?.font == NSFont.boldSystemFont(ofSize: 13)) ? 16 : 6
+                view.topAnchor.constraint(equalTo: prev.bottomAnchor, constant: gap).isActive = true
+            } else {
+                view.topAnchor.constraint(equalTo: parent.topAnchor, constant: inset).isActive = true
+            }
+            previous = view
+        }
     }
 }
