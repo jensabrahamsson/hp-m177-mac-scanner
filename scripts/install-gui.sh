@@ -31,6 +31,10 @@ chmod +x "${MACOS}/HP-M177-Scan"
 cp target/hp-m177-native-gui "${MACOS}/hp-m177-native-gui"
 chmod +x "${MACOS}/hp-m177-native-gui"
 
+if [ -f gui/AppIcon.icns ]; then
+  cp gui/AppIcon.icns "${RES}/AppIcon.icns"
+fi
+
 cat > "${APP_DIR}/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -46,6 +50,7 @@ cat > "${APP_DIR}/Contents/Info.plist" <<'PLIST'
   <key>CFBundleShortVersionString</key><string>0.1.0</string>
   <key>CFBundleVersion</key><string>1</string>
   <key>LSMinimumSystemVersion</key><string>12.0</string>
+  <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSPrincipalClass</key><string>NSApplication</string>
 </dict>

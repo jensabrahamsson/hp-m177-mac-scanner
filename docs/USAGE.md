@@ -59,6 +59,25 @@ hp-m177-bridge --port 8087
 
 Leave that process running while Image Capture / Preview is open.
 
+## GUI automation API
+
+The AppKit window and these commands share `GuiApp::add_scanner` / `GuiApp::scan`:
+
+```
+hp-m177-gui add 192.168.50.14
+hp-m177-gui list
+hp-m177-gui scan --source platen --color color --dpi 300 --format jpeg --output ~/Desktop/scan.jpg
+```
+
+The native helper (same code as the buttons) also accepts:
+
+```
+hp-m177-native-gui --exec add --host 192.168.50.14
+hp-m177-native-gui --exec scan --source platen --color color --dpi 300 --format jpeg --output ~/Desktop/scan.jpg
+```
+
+Exit status is 0 on success. stdout is the CLI/API log.
+
 ## GUI
 
 After `./scripts/install-gui.sh`:

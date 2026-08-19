@@ -91,7 +91,7 @@ fn create_job(
                 return Err(first);
             }
         },
-        Err(Error::Http { status, detail, .. }) if status == 400 || status == 500 => {
+        Err(Error::Http { status, .. }) if status == 400 || status == 500 => {
             let fallback = soap::create_scan_job_short_xml(req, scan_id);
             let body = post_xml(transport, url, fallback.as_bytes())?;
             soap::parse_create_job(&body)

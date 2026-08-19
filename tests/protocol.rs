@@ -146,3 +146,38 @@ fn soap_create_job_encode_is_what_scan_sends() {
     assert_eq!(a.color, b.color);
     assert_eq!(a.dpi, b.dpi);
 }
+
+#[test]
+fn add_uses_soap_when_device_has_escl_caps_but_soap_probe_is_down() {
+    use hp_m177::transport::{FnTransport, HttpResponse};
+    let caps = include_str!("../fixtures/live/escl-ScannerCapabilities.xml");
+    let t = FnTransport {
+        f: |req| {
+            if req.url.contains("ScannerCapabilities") {
+                Ok(HttpResponse {
+                    status: 200,
+                    headers: vec![],
+                    body: caps.as_bytes().to_vec(),
+                })
+            } else if req.url.contains("ScanJobs") {
+                Err(hp_m177::Error::Http {
+                    status: 404,
+                    url: req.url,
+                    detail: String::new(),
+                })
+            } else {
+                Err(hp_m177::Error::Transport {
+                    url: req.url,
+                    detail: "soap not answering".into(),
+                })
+            }
+        },
+    };
+    let mut store = Store::open(unique_home()).unwrap();
+    let rec = add_by_address(&mut store, &t, "192.168.50.14", Some(8289), Some(80))
+        .expect("add should keep SOAP for this firmware");
+    match rec.job {
+        hp_m177::JobProtocol::Soap { port } => assert_eq!(port, 8289),
+        other => panic!("expected SOAP, got {other:?}"),
+    }
+}

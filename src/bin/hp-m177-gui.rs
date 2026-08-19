@@ -4,14 +4,15 @@
 //! is on PATH, otherwise it runs an interactive Cocoa-free fallback that
 //! still calls `GuiApp::add_scanner` / `GuiApp::scan`.
 
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use hp_m177::gui::GuiApp;
-use hp_m177::model::ScanRequest;
+use hp_m177::model::{ColorMode, OutputFormat, ScanRequest, ScanSource};
 use hp_m177::transport::UreqTransport;
 use std::io::{self, Write};
 use std::path::PathBuf;
 use std::process::Command;
 
+/// Automate the same add/scan path the AppKit window uses.
 #[derive(Parser)]
 #[command(name = "hp-m177-gui", about = "Native Mac GUI for the M177fw scanner")]
 struct Args {
@@ -25,10 +26,44 @@ struct Args {
     /// Stay running without opening a window (used to assert the binary lives).
     #[arg(long)]
     headless: bool,
+    #[command(subcommand)]
+    cmd: Option<GuiCmd>,
+}
+
+#[derive(Subcommand, Debug)]
+enum GuiCmd {
+    /// Add a scanner (same as the Add button).
+    Add {
+        host: String,
+    },
+    /// Run a scan (same as the Scan button).
+    Scan {
+        #[arg(long, default_value = "platen")]
+        source: String,
+        #[arg(long, default_value = "color")]
+        color: String,
+        #[arg(long, default_value_t = 300)]
+        dpi: u32,
+        #[arg(long, default_value = "jpeg")]
+        format: String,
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+    },
+    /// List saved scanners.
+    List,
 }
 
 fn main() {
     let args = Args::parse();
+    if let Some(cmd) = args.cmd {
+        match run_api(cmd) {
+            Ok(code) => std::process::exit(code),
+            Err(e) => {
+                eprintln!("hp-m177-gui: {e}");
+                std::process::exit(1);
+            }
+        }
+    }
     if args.smoke {
         let host = args
             .host
@@ -65,6 +100,53 @@ fn main() {
         eprintln!("hp-m177-gui: {e}");
         std::process::exit(1);
     }
+}
+
+fn run_api(cmd: GuiCmd) -> hp_m177::Result<i32> {
+    let mut app = GuiApp::open(hp_m177::store::config_dir())?;
+    let t = UreqTransport::default();
+    match cmd {
+        GuiCmd::Add { host } => {
+            let rec = app.add_scanner(&t, &host)?;
+            println!(
+                "gui-api added {} via {:?} id={}",
+                rec.host, rec.job, rec.id
+            );
+        }
+        GuiCmd::Scan {
+            source,
+            color,
+            dpi,
+            format,
+            output,
+        } => {
+            let req = ScanRequest {
+                source: ScanSource::parse(&source)?,
+                color: ColorMode::parse(&color)?,
+                dpi,
+                format: OutputFormat::parse(&format)?,
+                output: output.clone(),
+            };
+            let (out, path) = app.scan(&t, &req)?;
+            println!(
+                "gui-api wrote {} ({} bytes, {} {} {}dpi)",
+                path.display(),
+                out.bytes.len(),
+                out.source,
+                out.color,
+                out.dpi
+            );
+        }
+        GuiCmd::List => {
+            for d in app.devices() {
+                println!("{}\t{}\t{:?}", d.id, d.host, d.job);
+            }
+            if app.devices().is_empty() {
+                println!("(no scanners)");
+            }
+        }
+    }
+    Ok(0)
 }
 
 fn find_native_gui() -> Option<PathBuf> {

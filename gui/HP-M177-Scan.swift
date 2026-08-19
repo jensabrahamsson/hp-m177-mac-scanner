@@ -7,9 +7,18 @@ import Foundation
 /// `hp_m177::add_by_address` and `hp_m177::scan` functions the test suite
 /// drives. Set `HP_M177_BIN` to override the binary path.
 
-if CommandLine.arguments.contains("--smoke") {
+let args = CommandLine.arguments
+if args.contains("--smoke") {
     FileHandle.standardOutput.write(Data("gui-native-smoke-ok\n".utf8))
     exit(0)
+}
+
+// Headless automation: same add/scan code path as the buttons.
+//   HP-M177-Scan --exec add --host 192.168.50.14
+//   HP-M177-Scan --exec scan --source platen --color color --dpi 300 --format jpeg --output /tmp/scan.jpg
+if let idx = args.firstIndex(of: "--exec"), args.index(after: idx) < args.endIndex {
+    let code = AppDelegate.exec(Array(args[(idx + 1)...]))
+    exit(code)
 }
 
 let delegate = AppDelegate()
@@ -93,6 +102,63 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 
+    /// Drive Discover / Add / Scan / Add-printer without opening a window.
+    static func exec(_ argv: [String]) -> Int32 {
+        var host = ""
+        var source = "platen"
+        var color = "color"
+        var dpi = "300"
+        var format = "jpeg"
+        var output = "scan.jpg"
+        var i = 0
+        let verb = argv.first ?? ""
+        while i < argv.count {
+            let a = argv[i]
+            func next() -> String {
+                i += 1
+                return i < argv.count ? argv[i] : ""
+            }
+            switch a {
+            case "--host": host = next()
+            case "--source": source = next()
+            case "--color": color = next()
+            case "--dpi": dpi = next()
+            case "--format": format = next()
+            case "--output": output = next()
+            default: break
+            }
+            i += 1
+        }
+        let d = AppDelegate()
+        switch verb {
+        case "discover":
+            return d.runHpStatus(["discover", "--timeout", "3"])
+        case "add":
+            if host.isEmpty { fputs("hp-m177-gui --exec add needs --host\n", stderr); return 2 }
+            return d.runHpStatus(["add", host])
+        case "scan":
+            return d.runHpStatus([
+                "scan", "--source", source, "--color", color,
+                "--dpi", dpi, "--format", format, "--output", output,
+            ])
+        case "add-printer":
+            var args = ["add-printer"]
+            if !host.isEmpty { args.append(host) }
+            return d.runHpStatus(args)
+        default:
+            fputs("unknown --exec verb '\(verb)' (use add|scan|discover|add-printer)\n", stderr)
+            return 2
+        }
+    }
+
+    @discardableResult
+    func runHpStatus(_ args: [String]) -> Int32 {
+        runHp(args)
+        return lastExit
+    }
+
+    var lastExit: Int32 = 0
+
     @objc func addScanner() {
         let host = hostField.stringValue.trimmingCharacters(in: .whitespaces)
         guard !host.isEmpty else {
@@ -145,9 +211,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let data = pipe.fileHandleForReading.readDataToEndOfFile()
             let text = String(data: data, encoding: .utf8) ?? ""
             logView.string += "$ \(bin) \(args.joined(separator: " "))\n\(text)\n"
-            status.stringValue = proc.terminationStatus == 0 ? "Done." : "Failed (exit \(proc.terminationStatus))."
+            lastExit = proc.terminationStatus
+            FileHandle.standardOutput.write(data)
+            status.stringValue = lastExit == 0 ? "Done." : "Failed (exit \(lastExit))."
         } catch {
+            lastExit = 1
             status.stringValue = "Could not start hp-m177: \(error.localizedDescription)"
+            fputs("\(status.stringValue)\n", stderr)
         }
     }
 

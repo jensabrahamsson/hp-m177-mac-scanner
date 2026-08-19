@@ -54,6 +54,10 @@ pub fn probe_host_ports(
         Some(JobProtocol::Escl { port: escl_port })
     } else if soap.is_some() {
         Some(JobProtocol::Soap { port: soap_port })
+    } else if escl_caps {
+        // This firmware answers eSCL caps but not ScanJobs. Jobs are SOAP
+        // on 8289 even when GetScannerElements is temporarily wedged.
+        Some(JobProtocol::Soap { port: soap_port })
     } else {
         None
     };

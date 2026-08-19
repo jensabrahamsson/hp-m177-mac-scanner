@@ -87,6 +87,13 @@ hp-m177-gui
 
 In the window: host/IP → **Add scanner** → choose source/color/DPI/format → **Scan**.
 
+The same path is scriptable (no clicks):
+
+```bash
+hp-m177-gui add 192.168.50.14
+hp-m177-gui scan --source platen --color color --dpi 300 --format jpeg --output ~/Desktop/scan.jpg
+```
+
 ## Add the scanner
 
 By address (IP or `.local` hostname):
@@ -109,7 +116,13 @@ Device records live in
 (override with `HP_M177_HOME`).
 
 If `add` says there is no usable scan protocol, the printer is off the LAN
-or SOAP port **8289** is not answering. Printing can still work via AirPrint.
+or both eSCL capabilities and SOAP are unreachable. Printing can still work
+via AirPrint.
+
+If `add` succeeds but `scan` times out on port **8289**, the printer’s SOAP
+scan service is wedged (TCP is open, no HTTP). Power-cycle the MFP (leave it
+unplugged ~10 seconds). eSCL capabilities on port 80 can still answer while
+SOAP is stuck.
 
 ## Scan (CLI)
 
