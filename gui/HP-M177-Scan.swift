@@ -203,7 +203,7 @@ final class ChromeCycle: NSView {
 
     override func mouseUp(with event: NSEvent) {
         guard bounds.contains(convert(event.locationInWindow, from: nil)) else { return }
-        owner?.activate(key)
+        owner?.showDropdown(self)
     }
 }
 
@@ -231,11 +231,13 @@ final class RootView: NSView {
         let topH: CGFloat = 32
         let topY = b.height - 12 - topH
         let gap: CGFloat = 8
-        let btnW = max((b.width - 32 - 3 * gap) / 4, 80)
+        let n: CGFloat = 5
+        let btnW = max((b.width - 32 - (n - 1) * gap) / n, 72)
         frames["discover"] = NSRect(x: 16, y: topY, width: btnW, height: topH)
         frames["add"] = NSRect(x: 16 + btnW + gap, y: topY, width: btnW, height: topH)
         frames["preview"] = NSRect(x: 16 + 2 * (btnW + gap), y: topY, width: btnW, height: topH)
-        frames["scan"] = NSRect(x: 16 + 3 * (btnW + gap), y: topY, width: btnW, height: topH)
+        frames["scanAll"] = NSRect(x: 16 + 3 * (btnW + gap), y: topY, width: btnW, height: topH)
+        frames["scan"] = NSRect(x: 16 + 4 * (btnW + gap), y: topY, width: btnW, height: topH)
 
         let colX: CGFloat = 16
         let colW: CGFloat = 300
@@ -262,6 +264,7 @@ final class RootView: NSView {
         placeButton("discover", "Discover", kind: .plain)
         placeButton("add", "Add Scanner", kind: .plain)
         placeButton("preview", "Preview")
+        placeButton("scanAll", "Scan All")
         placeButton("scan", "Scan")
         placeLabel("deviceHead", productName, bold: true)
         placeLabel("hostHead", "Host / IP", secondary: true)
@@ -354,9 +357,30 @@ final class RootView: NSView {
         if let c = chrome["format"] as? ChromeCycle { c.value = app.format; c.needsDisplay = true }
         app.preview.waiting = app.busy
         app.preview.blinkPhase = app.waitPhase
-        for key in ["discover", "add", "preview", "scan", "addToMacOS"] {
+        for key in ["discover", "add", "preview", "scanAll", "scan", "addToMacOS"] {
             chrome[key]?.needsDisplay = true
         }
+    }
+
+    func showDropdown(_ cycle: ChromeCycle) {
+        let options: [String]
+        switch cycle.key {
+        case "source": options = ["platen", "adf"]
+        case "color": options = ["color", "gray", "lineart"]
+        case "dpi": options = ["100", "300", "600"]
+        case "format": options = ["jpeg", "pdf", "tiff"]
+        default: return
+        }
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        for opt in options {
+            let item = NSMenuItem(title: opt, action: #selector(AppDelegate.chooseCycle(_:)), keyEquivalent: "")
+            item.target = app
+            item.representedObject = "\(cycle.key)=\(opt)"
+            item.state = cycle.value == opt ? .on : .off
+            menu.addItem(item)
+        }
+        menu.popUp(positioning: nil, at: NSPoint(x: 1, y: 0), in: cycle)
     }
 
     func activate(_ key: String) {
@@ -365,15 +389,10 @@ final class RootView: NSView {
         case "discover": app.discoverLan()
         case "add": app.addScanner()
         case "preview": app.runPreview()
+        case "scanAll": app.runScanAll()
         case "scan": app.runScan()
         case "addToMacOS": app.addToMacOS()
         case "addPrinter": app.addPrinter()
-        case "source": app.cycle(&app.source, ["platen", "adf"])
-        case "color": app.cycle(&app.color, ["color", "gray", "lineart"])
-        case "dpi": app.cycle(&app.dpi, ["100", "300", "600"])
-        case "format":
-            app.cycle(&app.format, ["jpeg", "pdf", "tiff"])
-            app.formatChanged()
         case "logToggle":
             app.toggleLog()
         default: break
@@ -551,7 +570,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     var color = "color"
     var dpi = "100"
     var format = "jpeg"
-    var statusText = "Add the \(productName) by IP or hostname, then Preview or Scan."
+    var statusText = "Enter the printer IP, then Add Scanner."
     var statusIsError = false
     var lastExit: Int32 = 0
     var busy = false
@@ -587,6 +606,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         hostField.stringValue = Self.savedHost() ?? ""
         hostField.target = self
         hostField.action = #selector(addScanner)
+        statusIsError = false
+        statusText = readyStatus()
         styleField(outputField)
         outputField.stringValue = Self.defaultDocumentsPath(ext: "jpg")
         outputField.placeholderString = "~/Documents/scan-<timestamp>.jpg"
@@ -706,6 +727,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         scanMenu.addItem(menuItem("Discover", #selector(discoverLan), "d"))
         scanMenu.addItem(menuItem("Add Scanner", #selector(addScanner), "a"))
         scanMenu.addItem(menuItem("Preview", #selector(runPreview), "p"))
+        scanMenu.addItem(menuItem("Scan All", #selector(runScanAll)))
         scanMenu.addItem(menuItem("Scan", #selector(runScan), "s"))
         scanMenu.addItem(NSMenuItem.separator())
         scanMenu.addItem(menuItem("Add Scanner to macOS", #selector(addToMacOS)))
@@ -746,14 +768,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func versionString() -> String {
-        let short = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.1.0"
-        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "10"
+        let short = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.2.0"
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "16"
         return "\(short) (\(build))"
     }
 
     @objc func showAbout(_ sender: Any?) {
         let credits = NSAttributedString(
-            string: "Scan client for the HP Color LaserJet Pro MFP M177fw.\nNot an HP product. No affiliation with HP Inc.",
+            string: "Scanner client for the HP Color LaserJet Pro MFP M177fw.\nNot an HP product. No affiliation with HP Inc.",
             attributes: [.font: NSFont.systemFont(ofSize: 11)]
         )
         NSApp.orderFrontStandardAboutPanel(options: [
@@ -767,11 +789,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let alert = NSAlert()
         alert.messageText = appName
         alert.informativeText = """
-        1. Enter the printer IP and click Add Scanner.
-        2. Preview the glass. Drag a rectangle to crop.
-        3. Scan writes ~/Documents/scan-<timestamp>.<ext>.
-        4. Add Scanner to macOS starts a local AirScan bridge. Image Capture lists \(appName). You can also send the scan to this app from Image Capture’s destination menu. Leave the bridge running.
+        1. Enter the printer IP and click Add Scanner (skipped if the host is already filled).
+        2. Scan All scans the whole page. No preview needed.
+        3. Preview the glass, drag a rectangle to crop, then Scan.
+        4. Add Scanner to macOS lists \(appName) in Image Capture.
 
+        Source, Color, DPI, and Format are dropdown menus.
         View → Show Log (⌘L) reveals hp-m177 command output.
 
         This is not an HP product.
@@ -986,10 +1009,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             var args = ["add-printer"]
             if !host.isEmpty { args.append(host) }
             return d.runHpStatus(args)
+        case "scan-all":
+            let args = [
+                "scan", "--source", source, "--color", color,
+                "--dpi", dpi, "--format", format, "--output", output,
+            ]
+            return d.runHpStatus(args)
         case "macos", "add-to-macos":
             return d.execAddToMacOS(openCapture: false)
         default:
-            fputs("unknown --exec verb '\(verb)' (use add|scan|preview|discover|add-printer|macos)\n", stderr)
+            fputs("unknown --exec verb '\(verb)' (use add|scan|scan-all|preview|discover|add-printer|macos)\n", stderr)
             return 2
         }
     }
@@ -1023,6 +1052,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             if args.contains("100") { return "Scanning preview…" }
             return "Scanning…"
         default: return "Working…"
+        }
+    }
+
+    static func shortSuccess(for args: [String]) -> String {
+        switch args.first {
+        case "add": return "Scanner added. Scan All for a full page, or Preview to crop."
+        case "discover": return "Discover finished."
+        case "add-printer": return "Print queue checked."
+        case "scan": return "Scan complete."
+        default: return "Done."
         }
     }
 
@@ -1087,6 +1126,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         return code
     }
 
+    func readyStatus() -> String {
+        let host = hostField.stringValue.trimmingCharacters(in: .whitespaces)
+        if !host.isEmpty {
+            return "Ready. Scan All for a full page, or Preview to crop."
+        }
+        return "Enter the printer IP, then Add Scanner."
+    }
+
+    @objc func chooseCycle(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String,
+              let eq = raw.firstIndex(of: "=") else { return }
+        let key = String(raw[..<eq])
+        let value = String(raw[raw.index(after: eq)...])
+        switch key {
+        case "source": source = value
+        case "color": color = value
+        case "dpi": dpi = value
+        case "format":
+            format = value
+            formatChanged()
+        default: break
+        }
+        root?.refresh()
+    }
+
     @objc func addScanner() {
         let host = hostField.stringValue.trimmingCharacters(in: .whitespaces)
         guard !host.isEmpty else {
@@ -1095,11 +1159,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             root?.refresh()
             return
         }
-        runHpAsync(["add", host])
+        runHpAsync(["add", host]) { [weak self] code, _ in
+            guard let self else { return }
+            if code == 0 {
+                self.setBusy(false, status: "Scanner added. Scan All for a full page, or Preview to crop.")
+            } else {
+                self.setBusy(false, status: Self.shortFailure(for: ["add"]), error: true)
+            }
+        }
     }
 
     @objc func discoverLan() {
-        runHpAsync(["discover", "--timeout", "3"])
+        runHpAsync(["discover", "--timeout", "3"]) { [weak self] code, text in
+            guard let self else { return }
+            if code != 0 {
+                self.setBusy(false, status: Self.shortFailure(for: ["discover"]), error: true)
+                return
+            }
+            let empty = text.contains("No IPP/scanner advertisements") || text.contains("No IPP")
+            if empty {
+                if !self.hostField.stringValue.trimmingCharacters(in: .whitespaces).isEmpty {
+                    self.setBusy(false, status: self.readyStatus())
+                } else {
+                    self.setBusy(false, status: "No LAN advertisements. Enter an IP and Add Scanner.")
+                }
+                return
+            }
+            self.setBusy(false, status: "Found scanners. Choose a host and Add Scanner.")
+        }
     }
 
     @objc func runPreview() {
@@ -1116,21 +1203,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         ]) { [weak self] code, text in
             guard let self else { return }
             if code == 0, let img = Self.imageFromScan(dest) {
+                self.setBusy(false, status: "Preview ready. Drag a rectangle, then Scan — or Scan All for the whole page.")
                 self.preview.image = img
                 self.preview.selection = nil
-                self.statusIsError = false
-                self.statusText = "Preview ready. Drag a rectangle, then Scan."
+                self.preview.message = "Preview — drag a region, or Scan All"
             } else {
                 self.preview.image = nil
                 self.preview.message = "Preview failed. Open Show Log for details."
-                self.statusIsError = true
-                self.statusText = "Preview failed. Open Show Log for details."
+                self.setBusy(false, status: "Preview failed. Open Show Log for details.", error: true)
             }
-            self.root?.refresh()
         }
     }
 
+    @objc func runScanAll() {
+        performScan(fullPage: true)
+    }
+
     @objc func runScan() {
+        performScan(fullPage: false)
+    }
+
+    func performScan(fullPage: Bool) {
         var args = [
             "scan",
             "--source", source,
@@ -1142,20 +1235,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if !out.isEmpty {
             args += ["--output", out]
         }
-        if let region = regionThousandths() {
+        if fullPage {
+            preview.selection = nil
+        } else if let region = regionThousandths() {
             args += ["--region", region]
         }
         runHpAsync(args) { [weak self] code, text in
             guard let self else { return }
-            self.preview.selection = nil
-            if code == 0, !out.isEmpty, let img = Self.imageFromScan(out) {
-                self.preview.image = img
-                self.preview.selection = nil
-            } else if code != 0 {
-                self.statusIsError = true
-                self.preview.message = "Scan failed. Open Show Log for details."
+            if fullPage { self.preview.selection = nil }
+            let name = URL(fileURLWithPath: out).lastPathComponent
+            if code == 0 {
+                self.setBusy(false, status: out.isEmpty ? "Scan complete." : "Saved \(name).")
+                if !out.isEmpty, let img = Self.imageFromScan(out) {
+                    self.preview.image = img
+                    self.preview.selection = nil
+                }
             } else {
-                self.statusIsError = false
+                self.preview.message = "Scan failed. Open Show Log for details."
+                self.setBusy(false, status: Self.shortFailure(for: ["scan"]), error: true)
             }
         }
     }
@@ -1408,14 +1505,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             DispatchQueue.main.async {
                 self.lastExit = code
                 self.appendLog("$ hp-m177 \(args.joined(separator: " "))\n\(text)\n")
-                if code != 0 {
-                    self.setBusy(false, status: Self.shortFailure(for: args), error: true)
-                } else if done == nil {
-                    self.setBusy(false, status: "Done.")
+                if let done {
+                    done(code, text)
+                    if self.busy {
+                        self.setBusy(
+                            false,
+                            status: code == 0 ? Self.shortSuccess(for: args) : Self.shortFailure(for: args),
+                            error: code != 0
+                        )
+                    }
                 } else {
-                    self.setBusy(false)
+                    self.setBusy(
+                        false,
+                        status: code == 0 ? Self.shortSuccess(for: args) : Self.shortFailure(for: args),
+                        error: code != 0
+                    )
                 }
-                done?(code, text)
             }
         }
     }

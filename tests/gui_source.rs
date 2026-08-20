@@ -88,6 +88,20 @@ fn appkit_gui_exists_and_invokes_cli() {
             && swift.contains("Looking for scanners"),
         "waiting status (Looking for scanners…) must blink until the command returns"
     );
+    assert!(
+        swift.contains("Scan All")
+            && swift.contains("runScanAll")
+            && swift.contains("performScan(fullPage: true)"),
+        "GUI must offer Scan All without a preview crop"
+    );
+    assert!(
+        swift.contains("showDropdown") && swift.contains("popUp") && swift.contains("chooseCycle"),
+        "Source/Color/DPI/Format must be real dropdown menus, not click-to-cycle"
+    );
+    assert!(
+        swift.contains("readyStatus") && swift.contains("Scanner added"),
+        "startup must not claim the scanner is missing when a host is already saved"
+    );
 }
 
 #[test]
@@ -210,6 +224,17 @@ fn docs_match_shipped_install_scan_and_gui_flags() {
     assert!(
         readme.contains("Mac scanner client"),
         "README title must say Mac scanner client"
+    );
+    assert!(
+        include_str!("../Cargo.toml").contains("version = \"0.2.0\"")
+            && install.contains("0.2.0")
+            && swift.contains("0.2.0")
+            && readme.contains("0.2.0"),
+        "crate, app, UI, and README must be version 0.2.0"
+    );
+    assert!(
+        readme.contains("Scan All") && usage.contains("dropdown"),
+        "docs must describe Scan All and dropdown menus"
     );
     assert!(
         install.contains("CFBundleDocumentTypes")

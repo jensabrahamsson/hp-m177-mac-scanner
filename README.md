@@ -103,10 +103,12 @@ open "$HOME/Applications/HP Color LaserJet Pro MFP M177fw Scanner.app"
 hp-m177-gui
 ```
 
-The window title is **HP Color LaserJet Pro MFP M177fw Scanner**. **Discover**,
-**Add Scanner**, **Preview**, and **Scan** sit along the top (drawn as window
-subviews; stock `NSButton` cells do not appear here). Source / color / DPI /
-format are click-to-cycle rows. Files default to
+The window title is **HP Color LaserJet Pro MFP M177fw Scanner** version
+**0.2.0**. **Discover**, **Add Scanner**, **Preview**, **Scan All**, and
+**Scan** sit along the top (drawn as window subviews; stock `NSButton` cells
+do not appear here). **Scan All** scans the whole page with no preview.
+**Scan** uses a crop rectangle if you dragged one after Preview. Source /
+color / DPI / format are dropdown menus. Files default to
 `~/Documents/scan-<timestamp>.<ext>` at **100 dpi**. Drag a rectangle on
 Preview to crop; Scan clears the overlay. **Add Scanner to macOS** starts the
 bundled `hp-m177-bridge` and advertises `_uscan._tcp` so Image Capture lists

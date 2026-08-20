@@ -22,7 +22,8 @@ names belong to their owners.
    scan implementation.
 6. **GUI-only preview:** a low-resolution preview of the platen, then an
    optional rubber-band region for the final scan. Region is expressed to the
-   device in 1/1000 inch (`ScanRegion`).
+   device in 1/1000 inch (`ScanRegion`). **Scan All** scans the whole page
+   with no preview. Source / color / DPI / format are dropdown menus.
 7. **Default save folder** on macOS is the user’s **Documents** directory
    (`~/Documents/scan-<timestamp>.<ext>`), overridable with `--output`.
 8. **Local eSCL + Bonjour `_uscan._tcp`** bridge (`hp-m177-bridge`) so Image
@@ -37,7 +38,7 @@ names belong to their owners.
     on TCP **8289** (DIME JPEG); if SOAP does not return pixels, Microsoft
     **WSD Scan** on TCP **3911** (`/scanner`, document format `dib`).
 11. **GUI automation** with no clicks: `hp-m177-gui add|scan|list`, the
-    AppKit helper `--exec add|scan|preview|discover|macos`, `--layout-check`,
+    AppKit helper `--exec add|scan|scan-all|preview|discover|macos`, `--layout-check`,
     and `--button-smoke` (same Add / Preview / Scan handlers as the window).
 12. **Custom Mac app icon** of a **flatbed scanner** (open lid, glass platen),
     not a printer with an output tray (`gui/AppIcon.icns`,

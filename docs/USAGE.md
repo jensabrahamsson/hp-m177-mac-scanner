@@ -82,6 +82,7 @@ The native helper (same code as the buttons, including Preview) also accepts:
 ```
 hp-m177-native-gui --exec add --host <printer-ip>
 hp-m177-native-gui --exec scan --source platen --color color --dpi 300 --format jpeg --output ~/Documents/scan.jpg
+hp-m177-native-gui --exec scan-all --output ~/Documents/scan.jpg
 hp-m177-native-gui --exec preview --host <printer-ip>
 hp-m177-native-gui --exec macos
 ```
@@ -99,9 +100,10 @@ hp-m177-gui
 
 Spotlight name: **HP Color LaserJet Pro MFP M177fw Scanner**.
 
-The window title is **HP Color LaserJet Pro MFP M177fw Scanner**. Use
-**Discover**, **Add Scanner**, **Preview**, and **Scan** (or the **Scan**
-menu). Source / color / DPI / format are click-to-cycle rows. Files go to
+The window title is **HP Color LaserJet Pro MFP M177fw Scanner** (version
+**0.2.0**). Use **Discover**, **Add Scanner**, **Preview**, **Scan All**, and
+**Scan** (or the **Scan** menu). **Scan All** is a full-page scan with no
+preview. Source / color / DPI / format are dropdown menus. Files go to
 `~/Documents/scan-<unix>.<ext>` (GUI default **100 dpi**). After Preview,
 drag a rectangle to crop; Scan clears the overlay. **Add Scanner to macOS**
 starts bundled `hp-m177-bridge` on port 8087, advertises `_uscan._tcp` as
