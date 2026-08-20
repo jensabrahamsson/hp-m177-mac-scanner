@@ -60,6 +60,10 @@ fn appkit_gui_exists_and_invokes_cli() {
         swift.contains("imageFromScan") && swift.contains("hp-m177-preview-"),
         "Preview must load JPEG bytes from a unique temp file, not a leftover 8x8"
     );
+    assert!(
+        swift.contains("shortFailure") && swift.contains("Show Log for details"),
+        "CLI dumps belong in the hideable log, not the status column"
+    );
 }
 
 #[test]

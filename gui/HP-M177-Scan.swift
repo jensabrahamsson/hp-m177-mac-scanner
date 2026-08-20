@@ -890,6 +890,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         return rec?["host"] as? String
     }
 
+    static func runningStatus(for args: [String]) -> String {
+        switch args.first {
+        case "add": return "Adding scanner…"
+        case "discover": return "Looking for scanners…"
+        case "add-printer": return "Checking print queue…"
+        case "scan":
+            if args.contains("100") { return "Scanning preview…" }
+            return "Scanning…"
+        default: return "Working…"
+        }
+    }
+
+    static func shortFailure(for args: [String]) -> String {
+        switch args.first {
+        case "add": return "Could not add the scanner. Open Show Log for details."
+        case "discover": return "Discover failed. Open Show Log for details."
+        case "add-printer": return "Could not add a print queue. Open Show Log for details."
+        case "scan": return "Scan failed. Open Show Log for details."
+        default: return "Failed. Open Show Log for details."
+        }
+    }
+
     static func imageFromScan(_ path: String) -> NSImage? {
         guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)), data.count > 128 else {
             return nil
@@ -973,10 +995,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 self.preview.selection = nil
                 self.statusText = "Preview ready. Drag a rectangle, then Scan."
             } else {
-                let tail = text.split(whereSeparator: \.isNewline).suffix(2).joined(separator: " ")
                 self.preview.image = nil
-                self.preview.message = "Preview failed (exit \(code)). \(tail)"
-                self.statusText = self.preview.message
+                self.preview.message = "Preview failed. Open Show Log for details."
+                self.statusText = "Preview failed. Open Show Log for details."
             }
             self.root?.refresh()
         }
@@ -1004,8 +1025,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 self.preview.image = img
                 self.preview.selection = nil
             } else if code != 0 {
-                let tail = text.split(whereSeparator: \.isNewline).suffix(2).joined(separator: " ")
-                self.preview.message = "Scan failed (exit \(code)). \(tail)"
+                self.preview.message = "Scan failed. Open Show Log for details."
             }
         }
     }
@@ -1039,7 +1059,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         if busy { return }
         busy = true
-        statusText = "Running hp-m177 \(args.joined(separator: " "))…"
+        statusText = Self.runningStatus(for: args)
         root?.refresh()
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
@@ -1049,8 +1069,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 self.lastExit = code
                 self.appendLog("$ hp-m177 \(args.joined(separator: " "))\n\(text)\n")
                 if code != 0 {
-                    let tail = text.split(whereSeparator: \.isNewline).suffix(2).joined(separator: " ")
-                    self.statusText = "Failed (exit \(code)). \(tail)"
+                    self.statusText = Self.shortFailure(for: args)
                 } else if done == nil {
                     self.statusText = "Done."
                 }
