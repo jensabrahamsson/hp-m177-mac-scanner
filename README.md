@@ -92,12 +92,14 @@ open "$HOME/Applications/HP M177 Scanner.app"
 hp-m177-gui
 ```
 
-The window title is **HP M177 Scanner**. A top row of blue buttons is
-**Discover**, **Add scanner**, **Preview**, and **Scan**. The left column
-has Host/IP, source / color / DPI / format (click a row to cycle), and the
-Documents save path (`~/Documents/scan-<timestamp>.<ext>`). Default GUI DPI
-is **100**. The right pane is the preview (drag a region after Preview).
-The Dock icon is a lid-open flatbed scanner.
+The window title is **HP M177 Scanner**. Stock AppKit buttons
+**Discover**, **Add Scanner**, **Preview**, and **Scan** sit along the
+top. The left column has Host/IP and pop-up menus for source, color, DPI,
+and format. Files default to `~/Documents/scan-<timestamp>.<ext>` at
+**100 dpi**. Drag a rectangle on Preview to crop; the overlay clears after
+Scan. **View → Show Log** reveals `hp-m177` output (hidden by default).
+The app menu has **About**, **Version**, **Quit**, and **Help**. The Dock
+icon is a lid-open flatbed scanner.
 
 The same path is scriptable (no clicks):
 

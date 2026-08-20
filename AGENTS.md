@@ -37,7 +37,7 @@ Installs CLI tools to `~/.cargo/bin` and the app bundle to
 | `src/wsd.rs` | Microsoft WSD Scan on TCP 3911 (`dib` / BMP) |
 | `src/escl.rs` / `src/facade.rs` | Local AirScan surface |
 | `src/fake.rs` | Protocol-accurate SOAP/DIME + WSD `/scanner` stand-in for tests |
-| `gui/HP-M177-Scan.swift` | AppKit window (`ChromeButton` subviews). Click-free: `--exec`, `--layout-check`, `--button-smoke` |
+| `gui/HP-M177-Scan.swift` | AppKit window (NSButton / NSPopUpButton, hideable log, About/Help/Quit). Click-free: `--exec`, `--layout-check`, `--button-smoke` |
 | `tests/` | Integration tests that launch shipped binaries |
 
 ## Rules of change

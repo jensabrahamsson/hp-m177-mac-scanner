@@ -21,8 +21,8 @@ fn appkit_gui_exists_and_invokes_cli() {
     let swift = include_str!("../gui/HP-M177-Scan.swift");
     assert!(swift.contains("NSWindow"), "AppKit window missing");
     assert!(
-        swift.contains("ChromeButton") && swift.contains("RootView"),
-        "buttons must be layer-backed subviews (content-view draw is not shown on screen)"
+        swift.contains("NSButton") && swift.contains("NSPopUpButton") && swift.contains("RootView"),
+        "window chrome must be stock AppKit controls"
     );
     assert!(
         swift.contains("\"add\"") && swift.contains("\"scan\""),
@@ -35,8 +35,12 @@ fn appkit_gui_exists_and_invokes_cli() {
         "GUI must have a preview surface"
     );
     assert!(
-        swift.contains("ChromeButton") && swift.contains("ChromeCycle"),
-        "visible chrome must be NSView subclasses with draw(_:), like PreviewView"
+        swift.contains("NSMenu") && swift.contains("showAbout") && swift.contains("showHelp"),
+        "app menu must include About and Help"
+    );
+    assert!(
+        swift.contains("Quit") && swift.contains("Show Log"),
+        "app menu must include Quit; View menu must hide the log"
     );
     assert!(
         swift.contains("--layout-check") && swift.contains("nonWhite"),
@@ -49,7 +53,7 @@ fn appkit_gui_exists_and_invokes_cli() {
     assert!(swift.contains("tiff") || swift.contains("TIFF"));
     assert!(swift.contains("lineart") || swift.contains("B/W") || swift.contains("bw"));
     assert!(
-        swift.contains("--button-smoke") && swift.contains("ChromeButton") && swift.contains("runHpAsync"),
+        swift.contains("--button-smoke") && swift.contains("NSButton") && swift.contains("runHpAsync"),
         "window buttons must be clickable and must not block the UI on SOAP"
     );
     assert!(
@@ -107,7 +111,7 @@ fn docs_match_shipped_install_scan_and_gui_flags() {
         );
     }
     assert!(readme.contains("cargo test --locked"));
-    assert!(readme.contains("Discover") && readme.contains("Add scanner"));
+    assert!(readme.contains("Discover") && (readme.contains("Add scanner") || readme.contains("Add Scanner")));
     assert!(readme.contains("Preview") && readme.contains("Scan"));
     assert!(readme.contains("scan-<timestamp>") || readme.contains("Documents"));
     assert!(readme.contains("WSD"));
@@ -115,7 +119,7 @@ fn docs_match_shipped_install_scan_and_gui_flags() {
     assert!(usage.contains("--button-smoke"));
     assert!(usage.contains("--adf-empty"));
     assert!(swift.contains("--exec") && swift.contains("--layout-check") && swift.contains("--button-smoke"));
-    assert!(swift.contains("ChromeButton"));
+    assert!(swift.contains("NSButton") && swift.contains("toggleLog"));
     assert!(protocol.contains("scan()") && protocol.contains("WSD"));
     assert!(protocol.contains("Error 13"));
     assert!(
