@@ -26,36 +26,161 @@ app.setActivationPolicy(.regular)
 app.delegate = delegate
 app.run()
 
-/// Transparent click target so painted chrome receives mouse events even
-/// when sibling controls sit in the same window.
-final class HitTarget: NSView {
-    var key: String = ""
-    weak var owner: RootView?
+/// Same drawing path as PreviewView, which the user can see. The window
+/// content view's draw(_:) is not composited on layer-backed macOS.
+func paintPrepare(_ v: NSView) {
+    v.wantsLayer = true
+    v.layerContentsRedrawPolicy = .onSetNeedsDisplay
+    v.translatesAutoresizingMaskIntoConstraints = true
+    v.autoresizingMask = []
+}
 
+final class ChromeButton: NSView {
+    var title: String
+    var key: String
+    weak var owner: RootView?
+    var pressed = false
+
+    init(title: String, key: String) {
+        self.title = title
+        self.key = key
+        super.init(frame: .zero)
+        paintPrepare(self)
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+    override var isOpaque: Bool { true }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-    override var isFlipped: Bool { false }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let disabled = owner?.app?.busy == true
+        let fill: NSColor
+        if disabled {
+            fill = NSColor(srgbRed: 0.45, green: 0.55, blue: 0.70, alpha: 1)
+        } else if pressed {
+            fill = NSColor(srgbRed: 0.05, green: 0.28, blue: 0.70, alpha: 1)
+        } else {
+            fill = NSColor(srgbRed: 0.10, green: 0.45, blue: 0.95, alpha: 1)
+        }
+        fill.setFill()
+        bounds.fill()
+        let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 6, yRadius: 6)
+        fill.setFill()
+        path.fill()
+        NSColor.white.setStroke()
+        path.lineWidth = 1
+        path.stroke()
+        let attrs: [NSAttributedString.Key: Any] = [
+            .foregroundColor: NSColor.white,
+            .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
+        ]
+        let size = title.size(withAttributes: attrs)
+        title.draw(
+            at: NSPoint(x: (bounds.width - size.width) / 2, y: (bounds.height - size.height) / 2),
+            withAttributes: attrs
+        )
+    }
 
     override func mouseDown(with event: NSEvent) {
-        owner?.beginPress(key)
+        guard owner?.app?.busy != true else { return }
+        pressed = true
+        needsDisplay = true
     }
 
     override func mouseUp(with event: NSEvent) {
-        let p = convert(event.locationInWindow, from: nil)
-        owner?.endPress(key, inside: bounds.contains(p))
+        let inside = bounds.contains(convert(event.locationInWindow, from: nil))
+        pressed = false
+        needsDisplay = true
+        if inside { owner?.activate(key) }
     }
 }
 
-/// All chrome is painted in this view's draw(_:). NSButton cells previously
-/// had frames but never appeared in the window backing store.
+final class ChromeLabel: NSView {
+    var text: String
+    var bold: Bool
+    var secondary: Bool
+
+    init(_ text: String, bold: Bool = false, secondary: Bool = false) {
+        self.text = text
+        self.bold = bold
+        self.secondary = secondary
+        super.init(frame: .zero)
+        paintPrepare(self)
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.windowBackgroundColor.setFill()
+        bounds.fill()
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineBreakMode = .byWordWrapping
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: bold ? NSFont.boldSystemFont(ofSize: 13) : NSFont.systemFont(ofSize: 12),
+            .foregroundColor: secondary
+                ? NSColor(srgbRed: 0.35, green: 0.35, blue: 0.38, alpha: 1)
+                : NSColor(srgbRed: 0.10, green: 0.10, blue: 0.12, alpha: 1),
+            .paragraphStyle: paragraph,
+        ]
+        text.draw(in: bounds, withAttributes: attrs)
+    }
+}
+
+final class ChromeCycle: NSView {
+    var caption: String
+    var key: String
+    var value: String
+    weak var owner: RootView?
+
+    init(caption: String, key: String, value: String) {
+        self.caption = caption
+        self.key = key
+        self.value = value
+        super.init(frame: .zero)
+        paintPrepare(self)
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 5, yRadius: 5)
+        NSColor(srgbRed: 0.95, green: 0.95, blue: 0.97, alpha: 1).setFill()
+        path.fill()
+        NSColor(srgbRed: 0.45, green: 0.45, blue: 0.50, alpha: 1).setStroke()
+        path.lineWidth = 1
+        path.stroke()
+        let capAttrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 11),
+            .foregroundColor: NSColor(srgbRed: 0.35, green: 0.35, blue: 0.38, alpha: 1),
+        ]
+        let valAttrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 13, weight: .medium),
+            .foregroundColor: NSColor(srgbRed: 0.10, green: 0.10, blue: 0.12, alpha: 1),
+        ]
+        caption.draw(at: NSPoint(x: 8, y: bounds.height / 2 - 7), withAttributes: capAttrs)
+        let val = "\(value)  ▾"
+        let size = val.size(withAttributes: valAttrs)
+        val.draw(at: NSPoint(x: bounds.width - size.width - 8, y: bounds.height / 2 - 8), withAttributes: valAttrs)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        guard bounds.contains(convert(event.locationInWindow, from: nil)) else { return }
+        owner?.activate(key)
+    }
+}
+
 final class RootView: NSView {
     weak var app: AppDelegate!
     var frames: [String: NSRect] = [:]
-    var press: String?
-    var hits: [String: HitTarget] = [:]
+    var chrome: [String: NSView] = [:]
 
-    override var isFlipped: Bool { false }
     override var isOpaque: Bool { true }
-    override var acceptsFirstResponder: Bool { true }
+    override var wantsUpdateLayer: Bool { true }
+
+    override func updateLayer() {
+        layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+    }
 
     override func layout() {
         super.layout()
@@ -66,7 +191,7 @@ final class RootView: NSView {
         let b = bounds
         guard b.width > 80, b.height > 80, app != nil else { return }
         let logH: CGFloat = 110
-        let topH: CGFloat = 32
+        let topH: CGFloat = 36
         let topY = b.height - 12 - topH
         let gap: CGFloat = 8
         let btnW = max((b.width - 32 - 3 * gap) / 4, 80)
@@ -96,6 +221,21 @@ final class RootView: NSView {
         row("outputField", 24)
         row("status", 40, gapAfter: 0)
 
+        placeButton("discover", "Discover")
+        placeButton("add", "Add scanner")
+        placeButton("preview", "Preview")
+        placeButton("scan", "Scan")
+        placeLabel("deviceHead", "Device", bold: true)
+        placeLabel("hostHead", "Host / IP", secondary: true)
+        placeButton("addPrinter", "Add printer if missing")
+        placeLabel("scanHead", "Scan", bold: true)
+        placeCycle("source", "Source", app.source)
+        placeCycle("color", "Color", app.color)
+        placeCycle("dpi", "DPI", app.dpi)
+        placeCycle("format", "Format", app.format)
+        placeLabel("saveHead", "Save to Documents", secondary: true)
+        placeLabel("status", app.statusText, secondary: true)
+
         app.hostField.frame = frames["hostField"] ?? .zero
         app.outputField.frame = frames["outputField"] ?? .zero
         let previewY = logH + 12
@@ -107,119 +247,64 @@ final class RootView: NSView {
             height: max(previewTop - previewY, 200)
         )
         app.scroll.frame = NSRect(x: 16, y: 12, width: b.width - 32, height: logH)
-
-        for key in ["discover", "add", "preview", "scan", "addPrinter", "source", "color", "dpi", "format"] {
-            if let r = frames[key] { ensureHit(key, r) }
-        }
+        refresh()
     }
 
-    func ensureHit(_ key: String, _ r: NSRect) {
-        let v: HitTarget
-        if let existing = hits[key] {
+    func placeButton(_ key: String, _ title: String) {
+        let v: ChromeButton
+        if let existing = chrome[key] as? ChromeButton {
             v = existing
         } else {
-            v = HitTarget()
-            v.key = key
+            v = ChromeButton(title: title, key: key)
             v.owner = self
-            addSubview(v, positioned: .above, relativeTo: nil)
-            hits[key] = v
+            addSubview(v)
+            chrome[key] = v
         }
-        v.frame = r
+        v.frame = frames[key] ?? .zero
+        v.needsDisplay = true
     }
 
-    override func draw(_ dirtyRect: NSRect) {
-        NSColor.windowBackgroundColor.setFill()
-        bounds.fill()
-        drawButton("Discover", key: "discover")
-        drawButton("Add scanner", key: "add")
-        drawButton("Preview", key: "preview")
-        drawButton("Scan", key: "scan")
-        drawLabel("Device", key: "deviceHead", bold: true)
-        drawLabel("Host / IP", key: "hostHead", secondary: true)
-        drawButton("Add printer if missing", key: "addPrinter")
-        drawLabel("Scan", key: "scanHead", bold: true)
-        drawCycle(caption: "Source", value: app.source, key: "source")
-        drawCycle(caption: "Color", value: app.color, key: "color")
-        drawCycle(caption: "DPI", value: app.dpi, key: "dpi")
-        drawCycle(caption: "Format", value: app.format, key: "format")
-        drawLabel("Save to Documents", key: "saveHead", secondary: true)
-        drawLabel(app.statusText, key: "status", secondary: true)
-    }
-
-    func drawButton(_ title: String, key: String) {
-        guard let r = frames[key] else { return }
-        let path = NSBezierPath(roundedRect: r.insetBy(dx: 0.5, dy: 0.5), xRadius: 6, yRadius: 6)
-        let pressed = press == key
-        let disabled = app?.busy == true
-        let fill: NSColor
-        if disabled {
-            fill = NSColor(srgbRed: 0.45, green: 0.55, blue: 0.70, alpha: 1)
-        } else if pressed {
-            fill = NSColor(srgbRed: 0.05, green: 0.28, blue: 0.70, alpha: 1)
+    func placeLabel(_ key: String, _ text: String, bold: Bool = false, secondary: Bool = false) {
+        let v: ChromeLabel
+        if let existing = chrome[key] as? ChromeLabel {
+            v = existing
+            v.text = text
         } else {
-            fill = NSColor(srgbRed: 0.10, green: 0.45, blue: 0.95, alpha: 1)
+            v = ChromeLabel(text, bold: bold, secondary: secondary)
+            addSubview(v)
+            chrome[key] = v
         }
-        fill.setFill()
-        path.fill()
-        NSColor.white.setStroke()
-        path.lineWidth = 1
-        path.stroke()
-        let attrs: [NSAttributedString.Key: Any] = [
-            .foregroundColor: NSColor.white,
-            .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
-        ]
-        let size = title.size(withAttributes: attrs)
-        title.draw(
-            at: NSPoint(x: r.midX - size.width / 2, y: r.midY - size.height / 2),
-            withAttributes: attrs
-        )
+        v.frame = frames[key] ?? .zero
+        v.needsDisplay = true
     }
 
-    func drawLabel(_ text: String, key: String, bold: Bool = false, secondary: Bool = false) {
-        guard let r = frames[key] else { return }
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.lineBreakMode = .byWordWrapping
-        let attrs: [NSAttributedString.Key: Any] = [
-            .font: bold ? NSFont.boldSystemFont(ofSize: 13) : NSFont.systemFont(ofSize: 12),
-            .foregroundColor: secondary ? NSColor.secondaryLabelColor : NSColor.labelColor,
-            .paragraphStyle: paragraph,
-        ]
-        text.draw(in: r, withAttributes: attrs)
+    func placeCycle(_ key: String, _ caption: String, _ value: String) {
+        let v: ChromeCycle
+        if let existing = chrome[key] as? ChromeCycle {
+            v = existing
+            v.value = value
+        } else {
+            v = ChromeCycle(caption: caption, key: key, value: value)
+            v.owner = self
+            addSubview(v)
+            chrome[key] = v
+        }
+        v.frame = frames[key] ?? .zero
+        v.needsDisplay = true
     }
 
-    func drawCycle(caption: String, value: String, key: String) {
-        guard let r = frames[key] else { return }
-        let path = NSBezierPath(roundedRect: r.insetBy(dx: 0.5, dy: 0.5), xRadius: 5, yRadius: 5)
-        NSColor(srgbRed: 0.95, green: 0.95, blue: 0.97, alpha: 1).setFill()
-        path.fill()
-        NSColor(srgbRed: 0.45, green: 0.45, blue: 0.50, alpha: 1).setStroke()
-        path.lineWidth = 1
-        path.stroke()
-        let capAttrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 11),
-            .foregroundColor: NSColor.secondaryLabelColor,
-        ]
-        let valAttrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 13, weight: .medium),
-            .foregroundColor: NSColor(srgbRed: 0.10, green: 0.10, blue: 0.12, alpha: 1),
-        ]
-        caption.draw(at: NSPoint(x: r.minX + 8, y: r.midY - 7), withAttributes: capAttrs)
-        let val = "\(value)  ▾"
-        let size = val.size(withAttributes: valAttrs)
-        val.draw(at: NSPoint(x: r.maxX - size.width - 8, y: r.midY - 8), withAttributes: valAttrs)
-    }
-
-    func beginPress(_ key: String) {
-        guard app?.busy != true else { return }
-        press = key
-        needsDisplay = true
-    }
-
-    func endPress(_ key: String, inside: Bool) {
-        press = nil
-        needsDisplay = true
-        guard inside else { return }
-        activate(key)
+    func refresh() {
+        if let status = chrome["status"] as? ChromeLabel {
+            status.text = app.statusText
+            status.needsDisplay = true
+        }
+        if let c = chrome["source"] as? ChromeCycle { c.value = app.source; c.needsDisplay = true }
+        if let c = chrome["color"] as? ChromeCycle { c.value = app.color; c.needsDisplay = true }
+        if let c = chrome["dpi"] as? ChromeCycle { c.value = app.dpi; c.needsDisplay = true }
+        if let c = chrome["format"] as? ChromeCycle { c.value = app.format; c.needsDisplay = true }
+        for key in ["discover", "add", "preview", "scan", "addPrinter"] {
+            chrome[key]?.needsDisplay = true
+        }
     }
 
     func activate(_ key: String) {
@@ -238,7 +323,7 @@ final class RootView: NSView {
             app.formatChanged()
         default: break
         }
-        needsDisplay = true
+        refresh()
     }
 }
 
@@ -251,6 +336,12 @@ final class PreviewView: NSView {
     }
     var dragStart: NSPoint?
 
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        paintPrepare(self)
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
     override var isFlipped: Bool { false }
     override var acceptsFirstResponder: Bool { true }
 
@@ -369,10 +460,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.delegate = self
         root = RootView(frame: NSRect(x: 0, y: 0, width: 980, height: 640))
         root.app = self
+        root.wantsLayer = true
         window.contentView = root
 
         styleField(hostField)
-        hostField.placeholderString = "192.168.50.14 or DEV26BA77.local"
+        hostField.placeholderString = "192.168.50.14 or hostname"
         hostField.stringValue = "192.168.50.14"
         hostField.target = self
         hostField.action = #selector(addScanner)
@@ -383,6 +475,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         logView.isEditable = false
         logView.font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
         logView.backgroundColor = NSColor.textBackgroundColor
+        logView.textColor = NSColor.textColor
         logView.minSize = NSSize(width: 0, height: 0)
         logView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         logView.isHorizontallyResizable = false
@@ -393,10 +486,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         scroll.hasVerticalScroller = true
         scroll.borderType = .bezelBorder
 
-        root.addSubview(hostField)
-        root.addSubview(outputField)
         root.addSubview(preview)
         root.addSubview(scroll)
+        root.addSubview(hostField)
+        root.addSubview(outputField)
         root.layoutChrome()
         appendLog("Using \(hpBinary())\n")
 
@@ -429,7 +522,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     func windowDidResize(_ notification: Notification) {
         root.needsLayout = true
-        root.needsDisplay = true
         root.layoutChrome()
     }
 
@@ -449,7 +541,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.displayIfNeeded()
         RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.25))
         root.layoutChrome()
-        root.needsDisplay = true
         window.displayIfNeeded()
 
         let hf = hostField.frame
@@ -478,8 +569,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 NSGraphicsContext.current = gc
                 gc.cgContext.translateBy(x: 0, y: CGFloat(pxH))
                 gc.cgContext.scaleBy(x: scale, y: -scale)
-                root.draw(root.bounds)
-                for v in root.subviews where !(v is HitTarget) {
+                NSColor.windowBackgroundColor.setFill()
+                NSBezierPath(rect: root.bounds).fill()
+                for v in root.subviews {
                     gc.cgContext.saveGState()
                     gc.cgContext.translateBy(x: v.frame.minX, y: v.frame.minY)
                     v.draw(v.bounds)
@@ -510,6 +602,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let report = "hostField=\(Int(hf.minX)),\(Int(hf.minY)) \(Int(hf.width))x\(Int(hf.height)) preview=\(Int(pv.minX)),\(Int(pv.minY)) \(Int(pv.width))x\(Int(pv.height)) scan=\(Int(scan.minX)),\(Int(scan.minY)) \(Int(scan.width))x\(Int(scan.height)) discover=\(Int(disc.minX)),\(Int(disc.minY)) \(Int(disc.width))x\(Int(disc.height)) window=\(Int(root.bounds.width))x\(Int(root.bounds.height)) nonWhite=\(painted) png=\(png)\n"
         FileHandle.standardOutput.write(Data(report.utf8))
         let topBand = root.bounds.height * 0.7
+        let hasScan = root.chrome["scan"] is ChromeButton
+        let hasDisc = root.chrome["discover"] is ChromeButton
         let ok = hf.height >= 20 && hf.width >= 80 && hf.minX < 80
             && pv.minX >= 280
             && scan.height >= 20 && scan.width >= 40
@@ -517,15 +611,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             && scan.minY > topBand
             && disc.minY > topBand
             && painted >= 30
-            && root.hits["scan"] != nil
-            && root.hits["discover"] != nil
+            && hasScan && hasDisc
         if !ok {
             fputs("layout-check failed (buttons missing or not drawn)\n", stderr)
         }
         return ok ? 0 : 1
     }
 
-    /// Same path as clicking Add, Preview, then Scan in the window.
     func runButtonSmoke() -> Int32 {
         var host = ""
         var output = Self.defaultDocumentsPath(ext: "jpg")
@@ -677,7 +769,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let host = hostField.stringValue.trimmingCharacters(in: .whitespaces)
         guard !host.isEmpty else {
             statusText = "Enter a host or IP first."
-            root?.needsDisplay = true
+            root?.refresh()
             return
         }
         runHpAsync(["add", host])
@@ -702,7 +794,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 self.preview.image = img
                 self.preview.selection = nil
                 self.statusText = "Preview ready. Drag a rectangle, then Scan."
-                self.root?.needsDisplay = true
+                self.root?.refresh()
             }
         }
     }
@@ -751,8 +843,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         runHpAsync(args)
     }
 
-    /// Interactive buttons: do not block the run loop. `--exec` / smoke stay
-    /// on spawnHp so they can wait for the process.
     func runHpAsync(_ args: [String], done: ((Int32, String) -> Void)? = nil) {
         if CommandLine.arguments.contains("--button-smoke") {
             let code = runHpStatus(args)
@@ -762,7 +852,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if busy { return }
         busy = true
         statusText = "Running hp-m177 \(args.joined(separator: " "))…"
-        root?.needsDisplay = true
+        root?.refresh()
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
             let (code, text) = self.spawnHp(args)
@@ -776,7 +866,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                     let tail = text.split(whereSeparator: \.isNewline).suffix(2).joined(separator: " ")
                     self.statusText = "Failed (exit \(code)). \(tail)"
                 }
-                self.root?.needsDisplay = true
+                self.root?.refresh()
                 done?(code, text)
             }
         }
@@ -842,10 +932,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         field.isBezeled = true
         field.bezelStyle = .squareBezel
         field.drawsBackground = true
-        field.backgroundColor = NSColor.textBackgroundColor
-        field.textColor = NSColor.labelColor
+        field.backgroundColor = NSColor.white
+        field.textColor = NSColor.black
         field.font = NSFont.systemFont(ofSize: 13)
         field.translatesAutoresizingMaskIntoConstraints = true
         field.autoresizingMask = []
+        paintPrepare(field)
     }
 }

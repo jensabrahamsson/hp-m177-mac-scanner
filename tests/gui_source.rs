@@ -21,8 +21,8 @@ fn appkit_gui_exists_and_invokes_cli() {
     let swift = include_str!("../gui/HP-M177-Scan.swift");
     assert!(swift.contains("NSWindow"), "AppKit window missing");
     assert!(
-        swift.contains("RootView") && swift.contains("drawButton"),
-        "AppKit chrome must paint buttons in the content view draw(_:) (NSButton cells were invisible)"
+        swift.contains("ChromeButton") && swift.contains("RootView"),
+        "buttons must be layer-backed subviews (content-view draw is not shown on screen)"
     );
     assert!(
         swift.contains("\"add\"") && swift.contains("\"scan\""),
@@ -35,8 +35,8 @@ fn appkit_gui_exists_and_invokes_cli() {
         "GUI must have a preview surface"
     );
     assert!(
-        swift.contains("drawButton") && swift.contains("drawCycle"),
-        "visible chrome must use draw(_:), not NSButton/NSPopUpButton cells"
+        swift.contains("ChromeButton") && swift.contains("ChromeCycle"),
+        "visible chrome must be NSView subclasses with draw(_:), like PreviewView"
     );
     assert!(
         swift.contains("--layout-check") && swift.contains("nonWhite"),
@@ -49,7 +49,7 @@ fn appkit_gui_exists_and_invokes_cli() {
     assert!(swift.contains("tiff") || swift.contains("TIFF"));
     assert!(swift.contains("lineart") || swift.contains("B/W") || swift.contains("bw"));
     assert!(
-        swift.contains("--button-smoke") && swift.contains("HitTarget") && swift.contains("runHpAsync"),
+        swift.contains("--button-smoke") && swift.contains("ChromeButton") && swift.contains("runHpAsync"),
         "window buttons must be clickable and must not block the UI on SOAP"
     );
 }
