@@ -5,8 +5,12 @@ set -eu
 cd "$(dirname "$0")/.."
 # Drop stale AppKit processes so Finder/Spotlight cannot keep an empty window.
 killall hp-m177-native-gui 2>/dev/null || true
-# Restart the AirScan advertisement under the real product name.
+# Restart the AirScan advertisement under the app name Image Capture shows.
 killall hp-m177-bridge 2>/dev/null || true
+# dns-sd -R children can outlive the bridge and keep the old sidebar name.
+ps -ax -o pid=,command= | awk '/[d]ns-sd -R / && /_uscan/ { print $1 }' | while read pid; do
+  kill "$pid" 2>/dev/null || true
+done
 
 BIN_DIR="${HOME}/.cargo/bin"
 APP_DIR="${HOME}/Applications/HP Color LaserJet Pro MFP M177fw Scanner.app"
@@ -78,11 +82,26 @@ cat > "${APP_DIR}/Contents/Info.plist" <<'PLIST'
   <key>CFBundleDisplayName</key><string>HP Color LaserJet Pro MFP M177fw Scanner</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>0.1.0</string>
-  <key>CFBundleVersion</key><string>13</string>
+  <key>CFBundleVersion</key><string>14</string>
   <key>LSMinimumSystemVersion</key><string>12.0</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSPrincipalClass</key><string>NSApplication</string>
+  <key>CFBundleDocumentTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleTypeName</key><string>Scanned image</string>
+      <key>CFBundleTypeRole</key><string>Viewer</string>
+      <key>LSHandlerRank</key><string>Alternate</string>
+      <key>LSItemContentTypes</key>
+      <array>
+        <string>public.jpeg</string>
+        <string>public.tiff</string>
+        <string>public.png</string>
+        <string>com.adobe.pdf</string>
+      </array>
+    </dict>
+  </array>
 </dict>
 </plist>
 PLIST
@@ -107,6 +126,15 @@ fi
 
 # Refresh Launch Services so Spotlight/Finder see the app.
 /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "${APP_DIR}" >/dev/null 2>&1 || true
+
+# Image Capture lists Automatic Tasks and apps that open JPEG/PDF/TIFF.
+for icdir in \
+  "${HOME}/Library/Image Capture/Automatic Tasks" \
+  "${HOME}/Library/Application Support/Apple/Image Capture/Automatic Tasks"
+do
+  mkdir -p "${icdir}"
+  ln -sfn "${APP_DIR}" "${icdir}/HP Color LaserJet Pro MFP M177fw Scanner.app"
+done
 
 echo "installed ${BIN_DIR}/hp-m177-native-gui"
 echo "installed ${APP_DIR}"

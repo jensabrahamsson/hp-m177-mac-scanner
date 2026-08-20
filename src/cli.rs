@@ -237,7 +237,10 @@ pub fn run(cli: Cli, store: &mut Store, transport: &dyn Transport, out: &mut dyn
             let _adv = if no_advertise {
                 None
             } else {
-                match crate::advertise::Advertisement::start(facade.addr.port(), crate::PRODUCT_NAME)
+                match crate::advertise::Advertisement::start(
+                    facade.addr.port(),
+                    crate::APP_DISPLAY_NAME,
+                )
                 {
                     Ok(a) => {
                         writeln!(out, "Advertised _uscan._tcp (rs=eSCL, is=platen,adf)")?;

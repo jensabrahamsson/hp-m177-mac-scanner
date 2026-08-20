@@ -539,6 +539,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     var logMenuItem: NSMenuItem!
     var bridgeProcess: Process?
     let bridgePort: UInt16 = 8087
+    var pendingOpen: String?
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         buildMainMenu()
@@ -613,9 +614,49 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.makeKeyAndOrderFront(nil)
         window.makeFirstResponder(hostField)
         NSApp.activate(ignoringOtherApps: true)
+        consumePendingOpen()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+
+    func application(_ sender: NSApplication, openFile filename: String) -> Bool {
+        pendingOpen = filename
+        if window != nil { consumePendingOpen() }
+        return true
+    }
+
+    func application(_ application: NSApplication, open urls: [URL]) {
+        pendingOpen = urls.first?.path
+        if window != nil { consumePendingOpen() }
+    }
+
+    func consumePendingOpen() {
+        guard let path = pendingOpen else { return }
+        pendingOpen = nil
+        loadOpenedScan(path)
+    }
+
+    func loadOpenedScan(_ path: String) {
+        window?.makeKeyAndOrderFront(nil)
+        if let img = Self.imageFromScan(path) {
+            preview.image = img
+            preview.selection = nil
+            statusIsError = false
+            statusText = "Opened \(URL(fileURLWithPath: path).lastPathComponent)"
+            if !path.isEmpty { outputField.stringValue = path }
+            root?.refresh()
+            appendLog("Opened \(path)\n")
+        } else if path.lowercased().hasSuffix(".pdf") {
+            NSWorkspace.shared.open(URL(fileURLWithPath: path))
+            statusIsError = false
+            statusText = "Opened PDF in Preview."
+            root?.refresh()
+        } else {
+            statusIsError = true
+            statusText = "Could not open \(URL(fileURLWithPath: path).lastPathComponent)."
+            root?.refresh()
+        }
+    }
 
     func buildMainMenu() {
         let main = NSMenu()
@@ -707,7 +748,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         1. Enter the printer IP and click Add Scanner.
         2. Preview the glass. Drag a rectangle to crop.
         3. Scan writes ~/Documents/scan-<timestamp>.<ext>.
-        4. Add Scanner to macOS starts a local AirScan bridge. Image Capture, Preview, and other apps can then use \(productName). Leave the bridge running.
+        4. Add Scanner to macOS starts a local AirScan bridge. Image Capture lists \(appName). You can also send the scan to this app from Image Capture’s destination menu. Leave the bridge running.
 
         View → Show Log (⌘L) reveals hp-m177 command output.
 
@@ -1164,7 +1205,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 self.appendLog("\(msg)\n")
                 self.statusIsError = !ok
                 self.statusText = ok
-                    ? "Available to other apps as \(productName)."
+                    ? "Available in Image Capture as \(appName)."
                     : msg
                 self.root?.refresh()
             }
@@ -1222,7 +1263,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if openCapture {
             DispatchQueue.main.async { self.openImageCapture() }
         }
-        return (true, "eSCL listening on http://127.0.0.1:\(bridgePort)/eSCL/ScannerCapabilities (Advertised _uscan._tcp as \(productName))")
+        return (true, "eSCL listening on http://127.0.0.1:\(bridgePort)/eSCL/ScannerCapabilities (Advertised _uscan._tcp as \(appName))")
     }
 
     func waitForBridge(seconds: Double) -> Bool {

@@ -105,8 +105,9 @@ menu). Source / color / DPI / format are click-to-cycle rows. Files go to
 `~/Documents/scan-<unix>.<ext>` (GUI default **100 dpi**). After Preview,
 drag a rectangle to crop; Scan clears the overlay. **Add Scanner to macOS**
 starts bundled `hp-m177-bridge` on port 8087, advertises `_uscan._tcp` as
-**HP Color LaserJet Pro MFP M177fw**, and opens Image Capture so Preview and
-other apps can scan. Failed status lines are
+**HP Color LaserJet Pro MFP M177fw Scanner**, and opens Image Capture so
+Preview and other apps can scan. Image Capture’s destination popup can
+send the scan to this app. Failed status lines are
 red; CLI dumps stay in the hideable log. The empty preview pane shows a
 flatbed scanner. **View → Show Log** (⌘L) or the Show Log control toggles
 `hp-m177` command output (off by default). **About** shows the version;
@@ -160,7 +161,7 @@ From the GUI: **Add Scanner**, then **Add Scanner to macOS**. Or:
    button, or `hp-m177-native-gui --exec macos`).
 3. **Image Capture**, **Preview → File → Import from Scanner…**, or
    **System Settings → Printers & Scanners** should list a network scanner
-   named **HP Color LaserJet Pro MFP M177fw** once Bonjour `_uscan._tcp` is visible.
+   named **HP Color LaserJet Pro MFP M177fw Scanner** once Bonjour `_uscan._tcp` is visible.
 4. Do not remove the existing **HP Color LaserJet Pro MFP M177fw** print
    queue.
 

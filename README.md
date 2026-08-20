@@ -1,6 +1,6 @@
-# HP Color LaserJet Pro MFP M177fw — Mac scan client
+# HP Color LaserJet Pro MFP M177fw — Mac scanner client
 
-Scan client for the **HP Color LaserJet Pro MFP M177fw** (CZ165A) on a Mac.
+Scanner client for the **HP Color LaserJet Pro MFP M177fw** (CZ165A) on a Mac.
 The native app is named **HP Color LaserJet Pro MFP M177fw Scanner**. It is
 meant to **sit beside** the working AirPrint print queue, not replace it.
 
@@ -109,8 +109,9 @@ subviews; stock `NSButton` cells do not appear here). Source / color / DPI /
 format are click-to-cycle rows. Files default to
 `~/Documents/scan-<timestamp>.<ext>` at **100 dpi**. Drag a rectangle on
 Preview to crop; Scan clears the overlay. **Add Scanner to macOS** starts the
-bundled `hp-m177-bridge` and advertises `_uscan._tcp` so Image Capture,
-Preview, and other apps can use the **HP Color LaserJet Pro MFP M177fw**.
+bundled `hp-m177-bridge` and advertises `_uscan._tcp` so Image Capture lists
+**HP Color LaserJet Pro MFP M177fw Scanner**. Preview and other apps can
+use the same scanner.
 **View → Show Log** (or the Show Log control) reveals `hp-m177` output,
 hidden by default. Failed status lines are red. The empty preview pane shows
 a flatbed scanner. The app menu has **About**, **Version**, **Quit**, and
@@ -192,8 +193,11 @@ While the bridge is running it:
 
 Open **Image Capture**, **Preview → File → Import from Scanner…**, or
 **System Settings → Printers & Scanners**. The scanner appears as
-**HP Color LaserJet Pro MFP M177fw**. If Bonjour is filtered, add the URL
-`http://127.0.0.1:8087`. Stop sharing with `killall hp-m177-bridge`.
+**HP Color LaserJet Pro MFP M177fw Scanner** (our app, via the local
+AirScan bridge). Image Capture can also send the finished scan to this
+app (it registers as an Automatic Task and opens JPEG / PDF / TIFF). If
+Bonjour is filtered, add the URL `http://127.0.0.1:8087`. Stop sharing
+with `killall hp-m177-bridge`.
 
 ## Optional: add the printer
 

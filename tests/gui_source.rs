@@ -198,7 +198,22 @@ fn docs_match_shipped_install_scan_and_gui_flags() {
     );
     assert!(
         readme.to_ascii_lowercase().contains("firmware")
-            && (readme.contains("brick") || readme.contains("brick")),
+            && readme.contains("brick"),
         "README must mention firmware upgrade vs bricking the printer"
+    );
+    assert!(
+        readme.contains("Mac scanner client"),
+        "README title must say Mac scanner client"
+    );
+    assert!(
+        install.contains("CFBundleDocumentTypes")
+            && install.contains("Automatic Tasks")
+            && swift.contains("openFile")
+            && swift.contains("loadOpenedScan"),
+        "app must register as an Image Capture destination and open scanned files"
+    );
+    assert!(
+        include_str!("../src/bin/hp-m177-bridge.rs").contains("APP_DISPLAY_NAME"),
+        "Bonjour instance in Image Capture must be the app display name"
     );
 }

@@ -37,7 +37,7 @@ fn main() {
     if !args.no_advertise {
         match hp_m177::advertise::Advertisement::start(
             facade.addr.port(),
-            hp_m177::PRODUCT_NAME,
+            hp_m177::APP_DISPLAY_NAME,
         ) {
             Ok(_a) => {
                 println!("Advertised _uscan._tcp rs=eSCL is=platen,adf cs=color,grayscale");
