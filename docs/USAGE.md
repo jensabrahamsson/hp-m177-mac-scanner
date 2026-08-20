@@ -10,6 +10,7 @@ cargo install --path . --locked
 export PATH="$HOME/.cargo/bin:$PATH"
 
 # 2. Native AppKit app → ~/Applications + ~/.cargo/bin
+#    (runs cargo install --path . --locked --force, then swiftc)
 ./scripts/install-gui.sh
 ```
 
@@ -48,8 +49,10 @@ hp-m177 bridge [--port 8087] [--bind ADDR] [--no-advertise]
 This firmware’s native eSCL ScanJobs are 404. SOAP 8289 is used when it
 answers; otherwise the saved job protocol is WSD (`dib`). `scan` talks SOAP
 (CreateScanJob → GetJobInfo → RetrieveImage DIME) and falls back to WSD
-if SOAP times out. PDF and TIFF are built locally. Default `--output` is
-`~/Documents/scan-<timestamp>.<ext>`.
+on timeout, Error 4, Error 13 after a few busy retries, or an empty image.
+PDF and TIFF are built locally. Default `--output` is
+`~/Documents/scan-<timestamp>.<ext>`. CLI default DPI is **300**; the
+AppKit window defaults to **100**.
 
 ## `hp-m177-bridge`
 
@@ -67,7 +70,7 @@ Leave that process running while Image Capture / Preview is open.
 The AppKit window and these commands share `GuiApp::add_scanner` / `GuiApp::scan`:
 
 ```
-hp-m177-gui add 192.168.50.14
+hp-m177-gui add <printer-ip>
 hp-m177-gui list
 hp-m177-gui scan --source platen --color color --dpi 300 --format jpeg --output ~/Documents/scan.jpg
 hp-m177-gui exec scan --format tiff --output ~/Documents/scan.tiff
@@ -76,9 +79,9 @@ hp-m177-gui exec scan --format tiff --output ~/Documents/scan.tiff
 The native helper (same code as the buttons, including Preview) also accepts:
 
 ```
-hp-m177-native-gui --exec add --host 192.168.50.14
+hp-m177-native-gui --exec add --host <printer-ip>
 hp-m177-native-gui --exec scan --source platen --color color --dpi 300 --format jpeg --output ~/Documents/scan.jpg
-hp-m177-native-gui --exec preview --host 192.168.50.14
+hp-m177-native-gui --exec preview --host <printer-ip>
 ```
 
 Exit status is 0 on success. stdout is the CLI/API log.
@@ -110,6 +113,7 @@ hp-m177-gui --headless
 hp-m177-gui --smoke --host HOST --output FILE
 hp-m177-gui --layout-check
 hp-m177-native-gui --smoke --host HOST --output FILE
+hp-m177-native-gui --button-smoke --host HOST --output FILE
 ```
 
 `--layout-check` prints Host/Preview/Scan frames, rasterizes the action bar,

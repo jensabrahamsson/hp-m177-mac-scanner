@@ -1,7 +1,7 @@
 use clap::Parser;
 
 #[derive(Parser)]
-#[command(name = "hp-m177-fake", about = "Protocol-accurate fake M177fw (SOAP + eSCL caps)")]
+#[command(name = "hp-m177-fake", about = "Protocol-accurate fake M177fw (SOAP + WSD /scanner + eSCL caps)")]
 struct Args {
     /// Simulate an empty ADF (default is loaded, matching a ready MFP).
     #[arg(long)]

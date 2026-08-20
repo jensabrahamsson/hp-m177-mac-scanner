@@ -7,7 +7,7 @@ import Foundation
 /// `HP_M177_BIN` overrides the binary path.
 ///
 /// Headless:
-///   HP-M177-Scan --exec add --host 192.168.50.14
+///   HP-M177-Scan --exec add --host <printer-ip>
 ///   HP-M177-Scan --exec scan --source platen --color color --dpi 300 --format jpeg --output ~/Documents/scan.jpg
 ///   HP-M177-Scan --button-smoke --host 127.0.0.1:PORT --output /tmp/gui.jpg
 
@@ -464,8 +464,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.contentView = root
 
         styleField(hostField)
-        hostField.placeholderString = "192.168.50.14 or hostname"
-        hostField.stringValue = "192.168.50.14"
+        hostField.placeholderString = "IPv4 or hostname.local"
+        hostField.stringValue = ""
         hostField.target = self
         hostField.action = #selector(addScanner)
         styleField(outputField)

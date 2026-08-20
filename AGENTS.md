@@ -36,8 +36,8 @@ Installs CLI tools to `~/.cargo/bin` and the app bundle to
 | `src/soap.rs` / `src/dime.rs` | HP SOAP on TCP 8289 + DIME JPEG |
 | `src/wsd.rs` | Microsoft WSD Scan on TCP 3911 (`dib` / BMP) |
 | `src/escl.rs` / `src/facade.rs` | Local AirScan surface |
-| `src/fake.rs` | Protocol-accurate SOAP/DIME stand-in for tests |
-| `gui/HP-M177-Scan.swift` | AppKit window; `--exec` and `--layout-check` are the click-free paths |
+| `src/fake.rs` | Protocol-accurate SOAP/DIME + WSD `/scanner` stand-in for tests |
+| `gui/HP-M177-Scan.swift` | AppKit window (`ChromeButton` subviews). Click-free: `--exec`, `--layout-check`, `--button-smoke` |
 | `tests/` | Integration tests that launch shipped binaries |
 
 ## Rules of change
@@ -50,8 +50,8 @@ Installs CLI tools to `~/.cargo/bin` and the app bundle to
 - English only in docs, comments, and user-visible strings.
 - No personal names, emails, machine-specific home paths, or private notes
   in files that are committed.
-- Prefer a short timeout on HP SOAP (TCP 8289) and fall back to WSD 3911
-  rather than hanging the GUI.
+- Prefer a short timeout on HP SOAP (TCP 8289). Retry SOAP Error 13 a few
+  times (device busy), then fall back to WSD 3911 rather than hanging the GUI.
 
 ## Useful environment variables
 
@@ -67,9 +67,11 @@ Do not point Cargo, Rustup, or the user home at a scratch directory.
 ## Protocol reminders
 
 - Live firmware: `GET /eSCL/ScannerCapabilities` is 200; `POST /eSCL/ScanJobs`
-  is 404. Jobs historically run on SOAP 8289. When that service is wedged,
-  WSD `POST http://<host>:3911/scanner` with format `dib` returns BMP via
-  MTOM/XOP.
+  is 404. Jobs historically run on SOAP 8289 (CreateScanJob 8s, GetJobInfo
+  deadline 20s, RetrieveImage 20s). When that service is wedged (timeout,
+  Error 4, Error 13 after retries, empty image), WSD
+  `POST http://<host>:3911/scanner` with format `dib` returns BMP via
+  MTOM/XOP (create 8s, retrieve 90s).
 - SOAP CreateScanJob tag layout must match this firmware (see `src/soap.rs`).
   A wrong wrapper returns gSOAP Error 4.
 - On macOS, advertise `_uscan._tcp` with `dns-sd -R` so `dns-sd -B` can see it.

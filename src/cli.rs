@@ -206,9 +206,7 @@ pub fn run(cli: Cli, store: &mut Store, transport: &dyn Transport, out: &mut dyn
         Command::AddPrinter { host } => {
             let host = match host {
                 Some(h) => h,
-                None => store.default_device().map(|d| d.host).unwrap_or_else(|_| {
-                    "DEV26BA77.local".into()
-                }),
+                None => store.default_device()?.host,
             };
             match crate::printadd::add_printer_if_missing(&host)? {
                 crate::model::PrintAddOutcome::LeftExisting { queue } => {

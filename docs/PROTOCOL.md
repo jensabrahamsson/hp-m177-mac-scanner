@@ -59,8 +59,12 @@ returned gSOAP **Error 4** (`SOAP_TAG_MISMATCH`). The client therefore emits
 the HPSimpleScan-shaped `wscn:CreateScanJobRequest` ticket and retries the
 short `CreateScanJob` operation name if the device rejects the first.
 
-`scan()` uses an 8 second timeout on SOAP CreateScanJob. A transport timeout
-falls through to WSD.
+`scan()` timeouts on SOAP: CreateScanJob **8s**, GetJobInfo poll deadline
+**20s** (4s per poll), RetrieveImage **20s**. CreateScanJob **Error 13**
+(device busy / wedged) is retried a few times (~800 ms apart). After those
+retries, or on transport timeout, Error 4 / tag mismatch, empty retrieve, or
+a SOAP fault, `scan()` falls through to WSD. After a successful SOAP
+retrieve the client sends a best-effort `CancelJob`.
 
 ## WSD Scan on 3911
 
@@ -74,6 +78,9 @@ falls through to WSD.
 - `RetrieveImage` returns `multipart/related` XOP; the image part is
   `image/bmp` (32-bit top-down DIB, ~2528×3465 at 300 dpi)
 - The client converts BMP → JPEG / PDF / TIFF
+- WSD CreateScanJob timeout **8s**; RetrieveImage **90s** (a 300 dpi BMP is
+  large). The SOAP path tries WSD on the SOAP port `/scanner` first, then
+  TCP **3911**.
 
 ## Local eSCL facade
 

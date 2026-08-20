@@ -72,4 +72,51 @@ fn app_icon_is_declared_and_present() {
         install.contains("setIcon") || install.contains("AppIcon.icns"),
         "install-gui.sh must install the icns"
     );
+    assert!(
+        install.contains("cargo install --path . --locked"),
+        "install-gui.sh must install this tree's CLI"
+    );
+}
+
+#[test]
+fn docs_match_shipped_install_scan_and_gui_flags() {
+    let readme = include_str!("../README.md");
+    let usage = include_str!("../docs/USAGE.md");
+    let agents = include_str!("../AGENTS.md");
+    let req = include_str!("../REQUIREMENTS.md");
+    let protocol = include_str!("../docs/PROTOCOL.md");
+    let swift = include_str!("../gui/HP-M177-Scan.swift");
+    let cli = include_str!("../src/cli.rs");
+    for (name, text) in [
+        ("README.md", readme),
+        ("docs/USAGE.md", usage),
+        ("AGENTS.md", agents),
+        ("REQUIREMENTS.md", req),
+    ] {
+        assert!(
+            text.contains("cargo install --path . --locked"),
+            "{name} must document cargo install --path . --locked"
+        );
+        assert!(
+            text.contains("install-gui.sh"),
+            "{name} must document scripts/install-gui.sh"
+        );
+    }
+    assert!(readme.contains("cargo test --locked"));
+    assert!(readme.contains("Discover") && readme.contains("Add scanner"));
+    assert!(readme.contains("Preview") && readme.contains("Scan"));
+    assert!(readme.contains("scan-<timestamp>") || readme.contains("Documents"));
+    assert!(readme.contains("WSD"));
+    assert!(usage.contains("--layout-check"));
+    assert!(usage.contains("--button-smoke"));
+    assert!(usage.contains("--adf-empty"));
+    assert!(swift.contains("--exec") && swift.contains("--layout-check") && swift.contains("--button-smoke"));
+    assert!(swift.contains("ChromeButton"));
+    assert!(protocol.contains("scan()") && protocol.contains("WSD"));
+    assert!(protocol.contains("Error 13"));
+    assert!(
+        !cli.contains("DEV26BA77.local"),
+        "add-printer must not hard-code a LAN hostname"
+    );
+    assert!(req.contains("--button-smoke"));
 }

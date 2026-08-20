@@ -25,8 +25,10 @@ Apple Image Capture does not see this 2014 MFP as a network scanner: the
 firmware advertises `_ipp._tcp` (print) and `_scanner._tcp` → port **8289**
 (HP SOAP), but **not** `_uscan._tcp` (eSCL / AirScan). It also serves
 `GET /eSCL/ScannerCapabilities` and `GET /eSCL/ScannerStatus`, yet
-`POST /eSCL/ScanJobs` returns **404**. The job cycle that actually returns
-pixels is HP’s SOAP API on **TCP 8289**, with the image in a **DIME** body.
+`POST /eSCL/ScanJobs` returns **404**. Jobs use HP SOAP on **TCP 8289**
+(DIME JPEG) when that service answers. If SOAP times out, returns Error 4
+or Error 13 after a few retries, or yields no pixels, `scan()` falls back
+to **WSD Scan** on **TCP 3911** (`dib` / BMP).
 
 This project:
 
@@ -67,14 +69,15 @@ Check: `hp-m177 --help`
 
 ## Install the GUI
 
-Needs the Xcode command-line tools (`swiftc`) and a working `hp-m177` on
-`PATH` (the step above).
+Needs the Xcode command-line tools (`swiftc`). The script runs
+`cargo install --path . --locked --force` so the `.app` bundles **this
+tree’s** `hp-m177`, then compiles the AppKit helper.
 
 ```bash
 ./scripts/install-gui.sh
 ```
 
-That builds the AppKit app and installs:
+That installs:
 
 | Location | What |
 | --- | --- |
@@ -91,15 +94,15 @@ hp-m177-gui
 
 The window title is **HP M177 Scanner**. A top row of blue buttons is
 **Discover**, **Add scanner**, **Preview**, and **Scan**. The left column
-has Host/IP, source / color / DPI / format (click to cycle), and the
-Documents save path. The right pane is the preview (drag a region after
-Preview). Files default to **Documents**. The Dock icon is a lid-open
-flatbed scanner.
+has Host/IP, source / color / DPI / format (click a row to cycle), and the
+Documents save path (`~/Documents/scan-<timestamp>.<ext>`). Default GUI DPI
+is **100**. The right pane is the preview (drag a region after Preview).
+The Dock icon is a lid-open flatbed scanner.
 
 The same path is scriptable (no clicks):
 
 ```bash
-hp-m177-gui add 192.168.50.14
+hp-m177-gui add <printer-ip>
 hp-m177-gui scan --source platen --color color --dpi 300 --format jpeg --output ~/Documents/scan.jpg
 hp-m177-gui exec scan --source platen --format tiff --output ~/Documents/scan.tiff
 ```
@@ -109,9 +112,9 @@ hp-m177-gui exec scan --source platen --format tiff --output ~/Documents/scan.ti
 By address (IP or `.local` hostname):
 
 ```bash
-hp-m177 add 192.168.50.14
+hp-m177 add <printer-ip>
 # or
-hp-m177 add DEV26BA77.local
+hp-m177 add printer.local
 ```
 
 By discovery (Bonjour `_ipp._tcp` / `_scanner._tcp` / `_uscan._tcp`):
@@ -152,7 +155,7 @@ hp-m177 scan --region 500,500,4000,6000 --format jpeg
 Keep the AirPrint printer as-is. In a terminal:
 
 ```bash
-hp-m177 add 192.168.50.14
+hp-m177 add <printer-ip>
 hp-m177-bridge --port 8087
 ```
 
@@ -172,7 +175,7 @@ Open **Image Capture**, **Preview → File → Import from iPhone or…**, or
 Only if you do **not** already have a working queue:
 
 ```bash
-hp-m177 add-printer 192.168.50.14
+hp-m177 add-printer <printer-ip>
 ```
 
 This runs `lpadmin … -m everywhere` (IPP Everywhere / AirPrint). If a queue
@@ -184,9 +187,11 @@ whose URI or name looks like the M177fw already exists, it is left untouched.
 cargo test --locked
 ```
 
-The suite starts a protocol-accurate fake MFP (SOAP + DIME + eSCL caps),
-drives the library, launches the real CLI twice, and launches the real eSCL
-listener (including the `hp-m177-bridge` binary) twice.
+The suite starts a protocol-accurate fake MFP (SOAP + DIME + WSD `/scanner`
++ eSCL caps), drives the library, launches the real CLI twice (JPEG platen
+color, then PDF ADF gray), and launches the real eSCL listener (including
+the `hp-m177-bridge` binary) twice. AppKit `--layout-check` and
+`--button-smoke` cover the native window chrome and button handlers.
 
 ## More documentation
 

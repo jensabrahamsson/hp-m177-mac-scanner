@@ -34,8 +34,9 @@ names belong to their owners.
 10. **Job APIs:** prefer native eSCL ScanJobs if they exist; otherwise HP SOAP
     on TCP **8289** (DIME JPEG); if SOAP does not return pixels, Microsoft
     **WSD Scan** on TCP **3911** (`/scanner`, document format `dib`).
-11. **GUI automation** with no clicks: `hp-m177-gui add|scan|list` and the
-    AppKit helper `--exec add|scan|discover`.
+11. **GUI automation** with no clicks: `hp-m177-gui add|scan|list`, the
+    AppKit helper `--exec add|scan|preview|discover`, `--layout-check`, and
+    `--button-smoke` (same Add / Preview / Scan handlers as the window).
 12. **Custom Mac app icon** of a **flatbed scanner** (open lid, glass platen),
     not a printer with an output tray (`gui/AppIcon.icns`,
     `CFBundleIconFile=AppIcon`).
@@ -52,8 +53,11 @@ names belong to their owners.
 
 ## Quality bar
 
-- In-repo tests drive the **shipped** add/scan functions against a
-  protocol-accurate fake (SOAP/DIME) and a WSD stand-in for the `dib` path.
+- Install: `cargo install --path . --locked` (CLI tools) and
+  `./scripts/install-gui.sh` (AppKit `.app` + bundled CLI).
+- In-repo tests: `cargo test --locked` drives the **shipped** add/scan
+  functions against a protocol-accurate fake (SOAP/DIME) and a WSD stand-in
+  for the `dib` path.
 - CLI and GUI automation each scan twice against the fake (JPEG platen color;
   PDF ADF gray).
 - Live LAN scans are evidence, not a substitute for those tests.
