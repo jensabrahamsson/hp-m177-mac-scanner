@@ -82,6 +82,12 @@ fn appkit_gui_exists_and_invokes_cli() {
         swift.contains("\"macos\"") && swift.contains("execAddToMacOS"),
         "AppKit --exec macos must start the AirScan bridge without requiring clicks"
     );
+    assert!(
+        swift.contains("startWaitBlink")
+            && swift.contains("blinkPhase")
+            && swift.contains("Looking for scanners"),
+        "waiting status (Looking for scanners…) must blink until the command returns"
+    );
 }
 
 #[test]

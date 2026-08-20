@@ -113,7 +113,7 @@ bundled `hp-m177-bridge` and advertises `_uscan._tcp` so Image Capture lists
 **HP Color LaserJet Pro MFP M177fw Scanner**. Preview and other apps can
 use the same scanner.
 **View → Show Log** (or the Show Log control) reveals `hp-m177` output,
-hidden by default. Failed status lines are red. The empty preview pane shows
+hidden by default. Waiting status lines blink; failed status lines are red. The empty preview pane shows
 a flatbed scanner. The app menu has **About**, **Version**, **Quit**, and
 **Help**. The Dock icon is a lid-open flatbed scanner.
 

@@ -108,7 +108,8 @@ starts bundled `hp-m177-bridge` on port 8087, advertises `_uscan._tcp` as
 **HP Color LaserJet Pro MFP M177fw Scanner**, and opens Image Capture so
 Preview and other apps can scan. Image Capture’s destination popup can
 send the scan to this app. Failed status lines are
-red; CLI dumps stay in the hideable log. The empty preview pane shows a
+red; waiting lines such as **Looking for scanners…** blink until the
+command returns. CLI dumps stay in the hideable log. The empty preview pane shows a
 flatbed scanner. **View → Show Log** (⌘L) or the Show Log control toggles
 `hp-m177` command output (off by default). **About** shows the version;
 **Help** explains the flow; **Quit** (⌘Q) exits. **Add Printer if Missing**

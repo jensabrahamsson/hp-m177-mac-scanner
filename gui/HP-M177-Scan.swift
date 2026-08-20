@@ -118,12 +118,16 @@ final class ChromeLabel: NSView {
     var bold: Bool
     var secondary: Bool
     var error: Bool
+    var waiting: Bool
+    var blinkPhase: CGFloat
 
     init(_ text: String, bold: Bool = false, secondary: Bool = false, error: Bool = false) {
         self.text = text
         self.bold = bold
         self.secondary = secondary
         self.error = error
+        self.waiting = false
+        self.blinkPhase = 0
         super.init(frame: .zero)
         paintPrepare(self)
     }
@@ -135,13 +139,20 @@ final class ChromeLabel: NSView {
         bounds.fill()
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineBreakMode = .byWordWrapping
-        let fg: NSColor
+        let base: NSColor
         if error {
-            fg = NSColor.systemRed
+            base = NSColor.systemRed
         } else if secondary {
-            fg = NSColor(srgbRed: 0.35, green: 0.35, blue: 0.38, alpha: 1)
+            base = NSColor(srgbRed: 0.35, green: 0.35, blue: 0.38, alpha: 1)
         } else {
-            fg = NSColor(srgbRed: 0.10, green: 0.10, blue: 0.12, alpha: 1)
+            base = NSColor(srgbRed: 0.10, green: 0.10, blue: 0.12, alpha: 1)
+        }
+        let fg: NSColor
+        if waiting && !error {
+            let a = 0.22 + 0.78 * CGFloat((sin(Double(blinkPhase)) + 1) / 2)
+            fg = base.withAlphaComponent(a)
+        } else {
+            fg = base
         }
         let attrs: [NSAttributedString.Key: Any] = [
             .font: bold ? NSFont.boldSystemFont(ofSize: 13) : NSFont.systemFont(ofSize: 12),
@@ -333,12 +344,16 @@ final class RootView: NSView {
         if let status = chrome["status"] as? ChromeLabel {
             status.text = app.statusText
             status.error = app.statusIsError
+            status.waiting = app.busy
+            status.blinkPhase = app.waitPhase
             status.needsDisplay = true
         }
         if let c = chrome["source"] as? ChromeCycle { c.value = app.source; c.needsDisplay = true }
         if let c = chrome["color"] as? ChromeCycle { c.value = app.color; c.needsDisplay = true }
         if let c = chrome["dpi"] as? ChromeCycle { c.value = app.dpi; c.needsDisplay = true }
         if let c = chrome["format"] as? ChromeCycle { c.value = app.format; c.needsDisplay = true }
+        app.preview.waiting = app.busy
+        app.preview.blinkPhase = app.waitPhase
         for key in ["discover", "add", "preview", "scan", "addToMacOS"] {
             chrome[key]?.needsDisplay = true
         }
@@ -385,6 +400,8 @@ final class PreviewView: NSView {
     }
     var dragStart: NSPoint?
     var emptyArt: NSImage?
+    var waiting = false
+    var blinkPhase: CGFloat = 0
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -468,8 +485,11 @@ final class PreviewView: NSView {
                 )
                 art.draw(in: r, from: .zero, operation: .sourceOver, fraction: 1)
             }
+            let msgAlpha: CGFloat = waiting
+                ? 0.22 + 0.78 * CGFloat((sin(Double(blinkPhase)) + 1) / 2)
+                : 1
             let attrs: [NSAttributedString.Key: Any] = [
-                .foregroundColor: NSColor.secondaryLabelColor,
+                .foregroundColor: NSColor.secondaryLabelColor.withAlphaComponent(msgAlpha),
                 .font: NSFont.systemFont(ofSize: 13),
             ]
             let size = message.size(withAttributes: attrs)
@@ -535,6 +555,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     var statusIsError = false
     var lastExit: Int32 = 0
     var busy = false
+    var waitTimer: Timer?
+    var waitPhase: CGFloat = 0
     var logVisible = false
     var logMenuItem: NSMenuItem!
     var bridgeProcess: Process?
@@ -1192,22 +1214,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             return
         }
         if busy { return }
-        busy = true
-        statusIsError = false
-        statusText = "Adding scanner to macOS…"
-        root?.refresh()
+        setBusy(true, status: "Adding scanner to macOS…")
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
             let (ok, msg) = self.startBridge(openCapture: openCapture)
             DispatchQueue.main.async {
-                self.busy = false
                 self.lastExit = ok ? 0 : 1
                 self.appendLog("\(msg)\n")
-                self.statusIsError = !ok
-                self.statusText = ok
-                    ? "Available in Image Capture as \(appName)."
-                    : msg
-                self.root?.refresh()
+                self.setBusy(
+                    false,
+                    status: ok ? "Available in Image Capture as \(appName)." : msg,
+                    error: !ok
+                )
             }
         }
     }
@@ -1311,11 +1329,69 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        stopWaitBlink()
         // Leave hp-m177-bridge running so Image Capture / Preview keep seeing the scanner.
         if let p = bridgeProcess, p.isRunning {
             _ = setpgid(p.processIdentifier, p.processIdentifier)
         }
         bridgeProcess = nil
+    }
+
+    func setBusy(_ on: Bool, status: String? = nil, error: Bool = false) {
+        busy = on
+        if let status { statusText = status }
+        statusIsError = error
+        if on {
+            startWaitBlink()
+        } else {
+            stopWaitBlink()
+        }
+        root?.refresh()
+    }
+
+    func startWaitBlink() {
+        if waitTimer != nil {
+            applyWaitBlink()
+            return
+        }
+        waitPhase = 0
+        applyWaitBlink()
+        let t = Timer(timeInterval: 1.0 / 24.0, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            if !self.busy {
+                self.stopWaitBlink()
+                return
+            }
+            self.waitPhase += 0.22
+            self.applyWaitBlink()
+        }
+        RunLoop.main.add(t, forMode: .common)
+        waitTimer = t
+    }
+
+    func applyWaitBlink() {
+        if let status = root?.chrome["status"] as? ChromeLabel {
+            status.waiting = true
+            status.blinkPhase = waitPhase
+            status.needsDisplay = true
+        }
+        preview.waiting = true
+        preview.blinkPhase = waitPhase
+        preview.needsDisplay = true
+    }
+
+    func stopWaitBlink() {
+        waitTimer?.invalidate()
+        waitTimer = nil
+        waitPhase = 0
+        if let status = root?.chrome["status"] as? ChromeLabel {
+            status.waiting = false
+            status.blinkPhase = 0
+            status.needsDisplay = true
+        }
+        preview.waiting = false
+        preview.blinkPhase = 0
+        preview.needsDisplay = true
     }
 
     func runHpAsync(_ args: [String], done: ((Int32, String) -> Void)? = nil) {
@@ -1325,25 +1401,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             return
         }
         if busy { return }
-        busy = true
-        statusIsError = false
-        statusText = Self.runningStatus(for: args)
-        root?.refresh()
+        setBusy(true, status: Self.runningStatus(for: args))
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
             let (code, text) = self.spawnHp(args)
             DispatchQueue.main.async {
-                self.busy = false
                 self.lastExit = code
                 self.appendLog("$ hp-m177 \(args.joined(separator: " "))\n\(text)\n")
                 if code != 0 {
-                    self.statusIsError = true
-                    self.statusText = Self.shortFailure(for: args)
+                    self.setBusy(false, status: Self.shortFailure(for: args), error: true)
                 } else if done == nil {
-                    self.statusIsError = false
-                    self.statusText = "Done."
+                    self.setBusy(false, status: "Done.")
+                } else {
+                    self.setBusy(false)
                 }
-                self.root?.refresh()
                 done?(code, text)
             }
         }
