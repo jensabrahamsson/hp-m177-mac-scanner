@@ -302,9 +302,15 @@ fn find_native_gui() -> Option<PathBuf> {
         let home = PathBuf::from(home);
         candidates.push(home.join(".cargo/bin/hp-m177-native-gui"));
         candidates.push(
+            home.join("Applications/HP Color LaserJet Pro MFP M177fw Scanner.app/Contents/MacOS/HP-M177-Scan"),
+        );
+        candidates.push(
             home.join("Applications/HP M177 Scanner.app/Contents/MacOS/HP-M177-Scan"),
         );
     }
+    candidates.push(PathBuf::from(
+        "/Applications/HP Color LaserJet Pro MFP M177fw Scanner.app/Contents/MacOS/HP-M177-Scan",
+    ));
     candidates.push(PathBuf::from(
         "/Applications/HP M177 Scanner.app/Contents/MacOS/HP-M177-Scan",
     ));
@@ -318,7 +324,8 @@ fn interactive_fallback(default_host: Option<String>) -> hp_m177::Result<()> {
     let mut stdout = io::stdout();
     writeln!(
         stdout,
-        "HP M177fw scanner (fallback UI — same add/scan API as the AppKit GUI)"
+        "{} (fallback UI — same add/scan API as the AppKit GUI)",
+        hp_m177::APP_DISPLAY_NAME
     )?;
     if let Some(host) = default_host {
         match app.add_scanner(&t, &host) {

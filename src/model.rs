@@ -6,6 +6,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 /// Model this product is written against.
 pub const PRODUCT_NAME: &str = "HP Color LaserJet Pro MFP M177fw";
 pub const PRODUCT_SHORT: &str = "M177fw";
+/// Finder / Spotlight / window title for the native scan app.
+pub const APP_DISPLAY_NAME: &str = "HP Color LaserJet Pro MFP M177fw Scanner";
 pub const DEFAULT_SOAP_PORT: u16 = 8289;
 pub const DEFAULT_ESCL_PORT: u16 = 80;
 pub const DEFAULT_WSD_PORT: u16 = 3911;

@@ -5,9 +5,15 @@ set -eu
 cd "$(dirname "$0")/.."
 # Drop stale AppKit processes so Finder/Spotlight cannot keep an empty window.
 killall hp-m177-native-gui 2>/dev/null || true
+# Restart the AirScan advertisement under the real product name.
+killall hp-m177-bridge 2>/dev/null || true
 
 BIN_DIR="${HOME}/.cargo/bin"
-APP_DIR="${HOME}/Applications/HP M177 Scanner.app"
+APP_DIR="${HOME}/Applications/HP Color LaserJet Pro MFP M177fw Scanner.app"
+OLD_APP="${HOME}/Applications/HP M177 Scanner.app"
+if [ -d "${OLD_APP}" ]; then
+  rm -rf "${OLD_APP}"
+fi
 MACOS="${APP_DIR}/Contents/MacOS"
 RES="${APP_DIR}/Contents/Resources"
 
@@ -68,11 +74,11 @@ cat > "${APP_DIR}/Contents/Info.plist" <<'PLIST'
   <key>CFBundleExecutable</key><string>HP-M177-Scan</string>
   <key>CFBundleIdentifier</key><string>se.makeitso.hp-m177-scanner</string>
   <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
-  <key>CFBundleName</key><string>HP M177 Scanner</string>
-  <key>CFBundleDisplayName</key><string>HP M177 Scanner</string>
+  <key>CFBundleName</key><string>HP Color LaserJet Pro MFP M177fw Scanner</string>
+  <key>CFBundleDisplayName</key><string>HP Color LaserJet Pro MFP M177fw Scanner</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>0.1.0</string>
-  <key>CFBundleVersion</key><string>12</string>
+  <key>CFBundleVersion</key><string>13</string>
   <key>LSMinimumSystemVersion</key><string>12.0</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>NSHighResolutionCapable</key><true/>

@@ -29,8 +29,8 @@ pub mod xmlutil;
 pub use cli::add_by_address;
 pub use error::{Error, Result};
 pub use model::{
-    ColorMode, DeviceRecord, JobProtocol, OutputFormat, ProbeResult, ScanOutput, ScanRegion,
-    ScanRequest, ScanSource,
+    APP_DISPLAY_NAME, ColorMode, DeviceRecord, JobProtocol, OutputFormat, ProbeResult,
+    PRODUCT_NAME, ScanOutput, ScanRegion, ScanRequest, ScanSource,
 };
 pub use scan::scan;
 pub use store::Store;

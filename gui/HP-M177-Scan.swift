@@ -12,6 +12,9 @@ import Foundation
 ///   HP-M177-Scan --exec scan --source platen --color color --dpi 300 --format jpeg --output ~/Documents/scan.jpg
 ///   HP-M177-Scan --button-smoke --host 127.0.0.1:PORT --output /tmp/gui.jpg
 
+let productName = "HP Color LaserJet Pro MFP M177fw"
+let appName = "HP Color LaserJet Pro MFP M177fw Scanner"
+
 let args = CommandLine.arguments
 if args.contains("--smoke") {
     exit(AppDelegate.smoke(args))
@@ -231,7 +234,7 @@ final class RootView: NSView {
             frames[key] = NSRect(x: colX, y: y, width: colW, height: height)
             y -= gapAfter
         }
-        row("deviceHead", 18, gapAfter: 4)
+        row("deviceHead", 32, gapAfter: 4)
         row("hostHead", 16, gapAfter: 4)
         row("hostField", 24)
         row("addToMacOS", 32, gapAfter: 14)
@@ -249,7 +252,7 @@ final class RootView: NSView {
         placeButton("add", "Add Scanner", kind: .plain)
         placeButton("preview", "Preview")
         placeButton("scan", "Scan")
-        placeLabel("deviceHead", "Device", bold: true)
+        placeLabel("deviceHead", productName, bold: true)
         placeLabel("hostHead", "Host / IP", secondary: true)
         placeButton("addToMacOS", "Add Scanner to macOS", kind: .plain)
         placeLabel("scanHead", "Scan", bold: true)
@@ -487,7 +490,7 @@ final class PreviewView: NSView {
         paths.append((here as NSString).deletingLastPathComponent + "/gui/EmptyPreview.png")
         paths.append((here as NSString).deletingLastPathComponent + "/EmptyPreview.png")
         paths.append(FileManager.default.currentDirectoryPath + "/gui/EmptyPreview.png")
-        paths.append(NSHomeDirectory() + "/Applications/HP M177 Scanner.app/Contents/Resources/EmptyPreview.png")
+        paths.append(NSHomeDirectory() + "/Applications/\(appName).app/Contents/Resources/EmptyPreview.png")
         for p in paths {
             if let img = NSImage(contentsOfFile: p), img.size.width > 16 {
                 img.isTemplate = false
@@ -528,7 +531,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     var color = "color"
     var dpi = "100"
     var format = "jpeg"
-    var statusText = "Add the scanner by IP or hostname, then Preview or Scan."
+    var statusText = "Add the \(productName) by IP or hostname, then Preview or Scan."
     var statusIsError = false
     var lastExit: Int32 = 0
     var busy = false
@@ -548,7 +551,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             backing: .buffered,
             defer: false
         )
-        window.title = "HP M177 Scanner"
+        window.title = appName
         window.minSize = NSSize(width: 860, height: 560)
         window.delegate = self
         root = RootView(frame: NSRect(x: 0, y: 0, width: 980, height: 640))
@@ -615,7 +618,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 
     func buildMainMenu() {
-        let appName = "HP M177 Scanner"
         let main = NSMenu()
 
         let appMenu = NSMenu()
@@ -633,6 +635,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         appMenu.addItem(NSMenuItem.separator())
         appMenu.addItem(withTitle: "Quit \(appName)", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         let appItem = NSMenuItem()
+        appItem.title = appName
         appItem.submenu = appMenu
         main.addItem(appItem)
 
@@ -691,7 +694,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             attributes: [.font: NSFont.systemFont(ofSize: 11)]
         )
         NSApp.orderFrontStandardAboutPanel(options: [
-            .applicationName: "HP M177 Scanner",
+            .applicationName: appName,
             .version: versionString(),
             .credits: credits,
         ])
@@ -699,12 +702,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     @objc func showHelp(_ sender: Any?) {
         let alert = NSAlert()
-        alert.messageText = "HP M177 Scanner"
+        alert.messageText = appName
         alert.informativeText = """
         1. Enter the printer IP and click Add Scanner.
         2. Preview the glass. Drag a rectangle to crop.
         3. Scan writes ~/Documents/scan-<timestamp>.<ext>.
-        4. Add Scanner to macOS starts a local AirScan bridge. Image Capture, Preview, and other apps can then use HP M177fw (hp-m177). Leave the bridge running.
+        4. Add Scanner to macOS starts a local AirScan bridge. Image Capture, Preview, and other apps can then use \(productName). Leave the bridge running.
 
         View → Show Log (⌘L) reveals hp-m177 command output.
 
@@ -1161,7 +1164,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 self.appendLog("\(msg)\n")
                 self.statusIsError = !ok
                 self.statusText = ok
-                    ? "Available to other apps as HP M177fw (hp-m177)."
+                    ? "Available to other apps as \(productName)."
                     : msg
                 self.root?.refresh()
             }
@@ -1219,7 +1222,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if openCapture {
             DispatchQueue.main.async { self.openImageCapture() }
         }
-        return (true, "eSCL listening on http://127.0.0.1:\(bridgePort)/eSCL/ScannerCapabilities (Advertised _uscan._tcp as HP M177fw (hp-m177))")
+        return (true, "eSCL listening on http://127.0.0.1:\(bridgePort)/eSCL/ScannerCapabilities (Advertised _uscan._tcp as \(productName))")
     }
 
     func waitForBridge(seconds: Double) -> Bool {

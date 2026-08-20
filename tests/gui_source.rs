@@ -133,6 +133,7 @@ fn docs_match_shipped_install_scan_and_gui_flags() {
     let protocol = include_str!("../docs/PROTOCOL.md");
     let swift = include_str!("../gui/HP-M177-Scan.swift");
     let cli = include_str!("../src/cli.rs");
+    let install = include_str!("../scripts/install-gui.sh");
     for (name, text) in [
         ("README.md", readme),
         ("docs/USAGE.md", usage),
@@ -173,4 +174,31 @@ fn docs_match_shipped_install_scan_and_gui_flags() {
         "add-printer must not hard-code a LAN hostname"
     );
     assert!(req.contains("--button-smoke"));
+    let full = "HP Color LaserJet Pro MFP M177fw";
+    assert!(
+        readme.contains(full) && usage.contains(full) && req.contains(full),
+        "docs must use the scanner's real product name"
+    );
+    assert!(
+        readme.contains("HP Color LaserJet Pro MFP M177fw Scanner.app"),
+        "README must name the .app after the M177fw"
+    );
+    assert!(
+        install.contains("HP Color LaserJet Pro MFP M177fw Scanner")
+            && swift.contains("HP Color LaserJet Pro MFP M177fw Scanner"),
+        "installed app and window title must be HP Color LaserJet Pro MFP M177fw Scanner"
+    );
+    assert!(
+        swift.contains("let productName = \"HP Color LaserJet Pro MFP M177fw\""),
+        "AppKit GUI must show the real scanner name"
+    );
+    assert!(
+        !include_str!("../src/bin/hp-m177-bridge.rs").contains("HP M177fw (hp-m177)"),
+        "Bonjour instance must be the real product name, not HP M177fw (hp-m177)"
+    );
+    assert!(
+        readme.to_ascii_lowercase().contains("firmware")
+            && (readme.contains("brick") || readme.contains("brick")),
+        "README must mention firmware upgrade vs bricking the printer"
+    );
 }

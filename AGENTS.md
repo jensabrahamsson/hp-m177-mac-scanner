@@ -26,7 +26,7 @@ cargo install --path . --locked
 `cargo test --locked`. The AppKit helper needs **swiftc** and **macOS 12+**.
 
 Installs CLI tools to `~/.cargo/bin` and the app bundle to
-`~/Applications/HP M177 Scanner.app`.
+`~/Applications/HP Color LaserJet Pro MFP M177fw Scanner.app`.
 
 ## Layout
 

@@ -1,7 +1,10 @@
-# hp-m177
+# HP Color LaserJet Pro MFP M177fw — Mac scan client
 
-Scan client for the **HP Color LaserJet Pro MFP M177fw** on a Mac. It is
+Scan client for the **HP Color LaserJet Pro MFP M177fw** (CZ165A) on a Mac.
+The native app is named **HP Color LaserJet Pro MFP M177fw Scanner**. It is
 meant to **sit beside** the working AirPrint print queue, not replace it.
+
+Repository / crate name: `hp-m177`.
 
 ## Not an HP project
 
@@ -14,6 +17,14 @@ worked and scanning did not.
 only talks the network protocols the printer already exposes on the LAN.
 
 The product contract is `REQUIREMENTS.md`. Contributor/build notes are `AGENTS.md`.
+
+## Firmware upgrade
+
+HP firmware for this MFP can add the AirScan/eSCL bits that current macOS
+expects, so Image Capture might then see the **HP Color LaserJet Pro MFP
+M177fw** without this project. That was considered. A failed or mismatched
+flash on a 2014 printer can brick it, so this client talks to the SOAP / WSD
+/ eSCL surfaces the device already exposes and leaves the firmware alone.
 
 ## License
 
@@ -81,28 +92,29 @@ That installs:
 
 | Location | What |
 | --- | --- |
-| `~/Applications/HP M177 Scanner.app` | Spotlight / Dock / Finder (scanner icns, not a printer) |
+| `~/Applications/HP Color LaserJet Pro MFP M177fw Scanner.app` | Spotlight / Dock / Finder (scanner icns, not a printer) |
 | `~/.cargo/bin/hp-m177-native-gui` | same binary; `hp-m177-gui` finds it automatically |
 
-Open it from Spotlight (**HP M177 Scanner**), or:
+Open it from Spotlight (**HP Color LaserJet Pro MFP M177fw Scanner**), or:
 
 ```bash
-open "$HOME/Applications/HP M177 Scanner.app"
+open "$HOME/Applications/HP Color LaserJet Pro MFP M177fw Scanner.app"
 # or
 hp-m177-gui
 ```
 
-The window title is **HP M177 Scanner**. **Discover**, **Add Scanner**,
-**Preview**, and **Scan** sit along the top (drawn as window subviews;
-stock `NSButton` cells do not appear here). Source / color / DPI / format
-are click-to-cycle rows. Files default to `~/Documents/scan-<timestamp>.<ext>`
-at **100 dpi**. Drag a rectangle on Preview to crop; Scan clears the overlay.
-**Add Scanner to macOS** starts the bundled `hp-m177-bridge` and advertises
-`_uscan._tcp` so Image Capture, Preview, and other apps can use
-`HP M177fw (hp-m177)`. **View → Show Log** (or the Show Log control) reveals
-`hp-m177` output, hidden by default. Failed status lines are red. The empty
-preview pane shows a flatbed scanner. The app menu has **About**, **Version**,
-**Quit**, and **Help**. The Dock icon is a lid-open flatbed scanner.
+The window title is **HP Color LaserJet Pro MFP M177fw Scanner**. **Discover**,
+**Add Scanner**, **Preview**, and **Scan** sit along the top (drawn as window
+subviews; stock `NSButton` cells do not appear here). Source / color / DPI /
+format are click-to-cycle rows. Files default to
+`~/Documents/scan-<timestamp>.<ext>` at **100 dpi**. Drag a rectangle on
+Preview to crop; Scan clears the overlay. **Add Scanner to macOS** starts the
+bundled `hp-m177-bridge` and advertises `_uscan._tcp` so Image Capture,
+Preview, and other apps can use the **HP Color LaserJet Pro MFP M177fw**.
+**View → Show Log** (or the Show Log control) reveals `hp-m177` output,
+hidden by default. Failed status lines are red. The empty preview pane shows
+a flatbed scanner. The app menu has **About**, **Version**, **Quit**, and
+**Help**. The Dock icon is a lid-open flatbed scanner.
 
 The same path is scriptable (no clicks):
 
@@ -180,7 +192,7 @@ While the bridge is running it:
 
 Open **Image Capture**, **Preview → File → Import from Scanner…**, or
 **System Settings → Printers & Scanners**. The scanner appears as
-`HP M177fw (hp-m177)`. If Bonjour is filtered, add the URL
+**HP Color LaserJet Pro MFP M177fw**. If Bonjour is filtered, add the URL
 `http://127.0.0.1:8087`. Stop sharing with `killall hp-m177-bridge`.
 
 ## Optional: add the printer

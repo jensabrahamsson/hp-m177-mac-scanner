@@ -30,7 +30,7 @@ icu 2.3, which need edition 2024 (Cargo 1.85+).
 `hp-m177-gui` looks for the native window in this order:
 `HP_M177_NATIVE_GUI`, the same directory as itself,
 `~/.cargo/bin/hp-m177-native-gui`, then
-`~/Applications/HP M177 Scanner.app`.
+`~/Applications/HP Color LaserJet Pro MFP M177fw Scanner.app`.
 
 ## `hp-m177`
 
@@ -93,19 +93,20 @@ Exit status is 0 on success. stdout is the CLI/API log.
 After `./scripts/install-gui.sh`:
 
 ```
-open "$HOME/Applications/HP M177 Scanner.app"
+open "$HOME/Applications/HP Color LaserJet Pro MFP M177fw Scanner.app"
 hp-m177-gui
 ```
 
-Spotlight name: **HP M177 Scanner**.
+Spotlight name: **HP Color LaserJet Pro MFP M177fw Scanner**.
 
-The window title is **HP M177 Scanner**. Use **Discover**, **Add Scanner**,
-**Preview**, and **Scan** (or the **Scan** menu). Source / color / DPI /
-format are click-to-cycle rows. Files go to `~/Documents/scan-<unix>.<ext>`
-(GUI default **100 dpi**). After Preview, drag a rectangle to crop; Scan
-clears the overlay. **Add Scanner to macOS** starts bundled `hp-m177-bridge`
-on port 8087, advertises `_uscan._tcp` as `HP M177fw (hp-m177)`, and opens
-Image Capture so Preview and other apps can scan. Failed status lines are
+The window title is **HP Color LaserJet Pro MFP M177fw Scanner**. Use
+**Discover**, **Add Scanner**, **Preview**, and **Scan** (or the **Scan**
+menu). Source / color / DPI / format are click-to-cycle rows. Files go to
+`~/Documents/scan-<unix>.<ext>` (GUI default **100 dpi**). After Preview,
+drag a rectangle to crop; Scan clears the overlay. **Add Scanner to macOS**
+starts bundled `hp-m177-bridge` on port 8087, advertises `_uscan._tcp` as
+**HP Color LaserJet Pro MFP M177fw**, and opens Image Capture so Preview and
+other apps can scan. Failed status lines are
 red; CLI dumps stay in the hideable log. The empty preview pane shows a
 flatbed scanner. **View → Show Log** (⌘L) or the Show Log control toggles
 `hp-m177` command output (off by default). **About** shows the version;
@@ -159,7 +160,7 @@ From the GUI: **Add Scanner**, then **Add Scanner to macOS**. Or:
    button, or `hp-m177-native-gui --exec macos`).
 3. **Image Capture**, **Preview → File → Import from Scanner…**, or
    **System Settings → Printers & Scanners** should list a network scanner
-   named `HP M177fw (hp-m177)` once Bonjour `_uscan._tcp` is visible.
+   named **HP Color LaserJet Pro MFP M177fw** once Bonjour `_uscan._tcp` is visible.
 4. Do not remove the existing **HP Color LaserJet Pro MFP M177fw** print
    queue.
 

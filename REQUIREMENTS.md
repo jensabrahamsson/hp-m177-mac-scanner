@@ -28,7 +28,7 @@ names belong to their owners.
 8. **Local eSCL + Bonjour `_uscan._tcp`** bridge (`hp-m177-bridge`) so Image
    Capture / Preview / other apps can treat this Mac as an AirScan scanner.
    The GUI **Add Scanner to macOS** action starts the bundled bridge (port
-   8087) and advertises `HP M177fw (hp-m177)`. The bridge calls the same
+   8087) and advertises **HP Color LaserJet Pro MFP M177fw**. The bridge calls the same
    `scan()` backend. Native device `POST /eSCL/ScanJobs` is 404 on this
    firmware; the bridge is the Image Capture path.
 9. **Optional AirPrint/CUPS add-printer** only when no queue already exists.
@@ -41,7 +41,9 @@ names belong to their owners.
     and `--button-smoke` (same Add / Preview / Scan handlers as the window).
 12. **Custom Mac app icon** of a **flatbed scanner** (open lid, glass platen),
     not a printer with an output tray (`gui/AppIcon.icns`,
-    `CFBundleIconFile=AppIcon`).
+    `CFBundleIconFile=AppIcon`). App name, window title, and Bonjour
+    instance are **HP Color LaserJet Pro MFP M177fw** (the `.app` is
+    `HP Color LaserJet Pro MFP M177fw Scanner`).
 13. **MIT** license. English docs and code comments.
 
 ## Out of scope
