@@ -26,17 +26,19 @@ names belong to their owners.
 7. **Default save folder** on macOS is the user’s **Documents** directory
    (`~/Documents/scan-<timestamp>.<ext>`), overridable with `--output`.
 8. **Local eSCL + Bonjour `_uscan._tcp`** bridge (`hp-m177-bridge`) so Image
-   Capture / Preview can treat this Mac as an AirScan scanner. The bridge
-   calls the same `scan()` backend. Native device `POST /eSCL/ScanJobs` is
-   404 on this firmware; the bridge is the Image Capture path.
+   Capture / Preview / other apps can treat this Mac as an AirScan scanner.
+   The GUI **Add Scanner to macOS** action starts the bundled bridge (port
+   8087) and advertises `HP M177fw (hp-m177)`. The bridge calls the same
+   `scan()` backend. Native device `POST /eSCL/ScanJobs` is 404 on this
+   firmware; the bridge is the Image Capture path.
 9. **Optional AirPrint/CUPS add-printer** only when no queue already exists.
    Never replace the working print queue.
 10. **Job APIs:** prefer native eSCL ScanJobs if they exist; otherwise HP SOAP
     on TCP **8289** (DIME JPEG); if SOAP does not return pixels, Microsoft
     **WSD Scan** on TCP **3911** (`/scanner`, document format `dib`).
 11. **GUI automation** with no clicks: `hp-m177-gui add|scan|list`, the
-    AppKit helper `--exec add|scan|preview|discover`, `--layout-check`, and
-    `--button-smoke` (same Add / Preview / Scan handlers as the window).
+    AppKit helper `--exec add|scan|preview|discover|macos`, `--layout-check`,
+    and `--button-smoke` (same Add / Preview / Scan handlers as the window).
 12. **Custom Mac app icon** of a **flatbed scanner** (open lid, glass platen),
     not a printer with an output tray (`gui/AppIcon.icns`,
     `CFBundleIconFile=AppIcon`).

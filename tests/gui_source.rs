@@ -64,6 +64,24 @@ fn appkit_gui_exists_and_invokes_cli() {
         swift.contains("shortFailure") && swift.contains("Show Log for details"),
         "CLI dumps belong in the hideable log, not the status column"
     );
+    assert!(
+        swift.contains("statusIsError") && swift.contains("systemRed"),
+        "failed status must draw in system red"
+    );
+    assert!(
+        swift.contains("addToMacOS")
+            && swift.contains("hp-m177-bridge")
+            && swift.contains("Image Capture"),
+        "GUI must start hp-m177-bridge so Image Capture / Preview can use the scanner"
+    );
+    assert!(
+        swift.contains("EmptyPreview") && swift.contains("loadEmptyArt"),
+        "empty preview pane must draw scanner artwork"
+    );
+    assert!(
+        swift.contains("\"macos\"") && swift.contains("execAddToMacOS"),
+        "AppKit --exec macos must start the AirScan bridge without requiring clicks"
+    );
 }
 
 #[test]
@@ -88,6 +106,22 @@ fn app_icon_is_declared_and_present() {
         install.contains("cargo install --path . --locked"),
         "install-gui.sh must install this tree's CLI"
     );
+    assert!(
+        install.contains("hp-m177-bridge") && install.contains("HP_M177_BRIDGE"),
+        "install-gui.sh must bundle hp-m177-bridge for Add Scanner to macOS"
+    );
+    assert!(
+        install.contains("EmptyPreview.png"),
+        "install-gui.sh must copy empty-preview scanner art into the app"
+    );
+    let preview = std::path::Path::new("gui/EmptyPreview.png");
+    assert!(preview.is_file(), "gui/EmptyPreview.png missing");
+    let png = std::fs::read(preview).unwrap();
+    assert!(
+        png.starts_with(&[0x89, b'P', b'N', b'G']),
+        "EmptyPreview.png is not a PNG"
+    );
+    assert!(png.len() > 10_000, "EmptyPreview.png too small");
 }
 
 #[test]
@@ -117,6 +151,14 @@ fn docs_match_shipped_install_scan_and_gui_flags() {
     assert!(readme.contains("cargo test --locked"));
     assert!(readme.contains("Discover") && (readme.contains("Add scanner") || readme.contains("Add Scanner")));
     assert!(readme.contains("Preview") && readme.contains("Scan"));
+    assert!(
+        readme.contains("Add Scanner to macOS") && usage.contains("Add Scanner to macOS"),
+        "docs must describe adding the scanner to macOS for Image Capture / Preview"
+    );
+    assert!(
+        swift.contains("Add Scanner to macOS") && usage.contains("hp-m177-bridge"),
+        "GUI and usage must share the AirScan bridge path"
+    );
     assert!(readme.contains("scan-<timestamp>") || readme.contains("Documents"));
     assert!(readme.contains("WSD"));
     assert!(usage.contains("--layout-check"));

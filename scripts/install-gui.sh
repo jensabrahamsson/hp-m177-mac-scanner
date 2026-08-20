@@ -29,6 +29,11 @@ if [ -x "${HERE}/hp-m177" ]; then
 else
   export HP_M177_BIN="${HOME}/.cargo/bin/hp-m177"
 fi
+if [ -x "${HERE}/hp-m177-bridge" ]; then
+  export HP_M177_BRIDGE="${HERE}/hp-m177-bridge"
+else
+  export HP_M177_BRIDGE="${HOME}/.cargo/bin/hp-m177-bridge"
+fi
 exec "${HERE}/hp-m177-native-gui" "$@"
 WRAP
 chmod +x "${MACOS}/HP-M177-Scan"
@@ -36,17 +41,22 @@ cp target/hp-m177-native-gui "${MACOS}/hp-m177-native-gui"
 chmod +x "${MACOS}/hp-m177-native-gui"
 
 # Bundle the CLI so Finder/Spotlight launches do not depend on PATH.
-if command -v hp-m177 >/dev/null 2>&1; then
-  cp "$(command -v hp-m177)" "${MACOS}/hp-m177"
-elif [ -x "${BIN_DIR}/hp-m177" ]; then
-  cp "${BIN_DIR}/hp-m177" "${MACOS}/hp-m177"
-fi
-if [ -x "${MACOS}/hp-m177" ]; then
-  chmod +x "${MACOS}/hp-m177"
-fi
+for tool in hp-m177 hp-m177-bridge; do
+  if command -v "${tool}" >/dev/null 2>&1; then
+    cp "$(command -v "${tool}")" "${MACOS}/${tool}"
+  elif [ -x "${BIN_DIR}/${tool}" ]; then
+    cp "${BIN_DIR}/${tool}" "${MACOS}/${tool}"
+  fi
+  if [ -x "${MACOS}/${tool}" ]; then
+    chmod +x "${MACOS}/${tool}"
+  fi
+done
 
 if [ -f gui/AppIcon.icns ]; then
   cp gui/AppIcon.icns "${RES}/AppIcon.icns"
+fi
+if [ -f gui/EmptyPreview.png ]; then
+  cp gui/EmptyPreview.png "${RES}/EmptyPreview.png"
 fi
 
 cat > "${APP_DIR}/Contents/Info.plist" <<'PLIST'
@@ -62,7 +72,7 @@ cat > "${APP_DIR}/Contents/Info.plist" <<'PLIST'
   <key>CFBundleDisplayName</key><string>HP M177 Scanner</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>0.1.0</string>
-  <key>CFBundleVersion</key><string>11</string>
+  <key>CFBundleVersion</key><string>12</string>
   <key>LSMinimumSystemVersion</key><string>12.0</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>NSHighResolutionCapable</key><true/>

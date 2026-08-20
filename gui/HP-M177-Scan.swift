@@ -1,4 +1,5 @@
 import AppKit
+import Darwin
 import Foundation
 
 /// Native AppKit GUI for the M177fw scanner.
@@ -113,11 +114,13 @@ final class ChromeLabel: NSView {
     var text: String
     var bold: Bool
     var secondary: Bool
+    var error: Bool
 
-    init(_ text: String, bold: Bool = false, secondary: Bool = false) {
+    init(_ text: String, bold: Bool = false, secondary: Bool = false, error: Bool = false) {
         self.text = text
         self.bold = bold
         self.secondary = secondary
+        self.error = error
         super.init(frame: .zero)
         paintPrepare(self)
     }
@@ -129,11 +132,17 @@ final class ChromeLabel: NSView {
         bounds.fill()
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineBreakMode = .byWordWrapping
+        let fg: NSColor
+        if error {
+            fg = NSColor.systemRed
+        } else if secondary {
+            fg = NSColor(srgbRed: 0.35, green: 0.35, blue: 0.38, alpha: 1)
+        } else {
+            fg = NSColor(srgbRed: 0.10, green: 0.10, blue: 0.12, alpha: 1)
+        }
         let attrs: [NSAttributedString.Key: Any] = [
             .font: bold ? NSFont.boldSystemFont(ofSize: 13) : NSFont.systemFont(ofSize: 12),
-            .foregroundColor: secondary
-                ? NSColor(srgbRed: 0.35, green: 0.35, blue: 0.38, alpha: 1)
-                : NSColor(srgbRed: 0.10, green: 0.10, blue: 0.12, alpha: 1),
+            .foregroundColor: fg,
             .paragraphStyle: paragraph,
         ]
         text.draw(in: bounds, withAttributes: attrs)
@@ -225,7 +234,7 @@ final class RootView: NSView {
         row("deviceHead", 18, gapAfter: 4)
         row("hostHead", 16, gapAfter: 4)
         row("hostField", 24)
-        row("addPrinter", 32, gapAfter: 14)
+        row("addToMacOS", 32, gapAfter: 14)
         row("scanHead", 18, gapAfter: 6)
         row("source", 28)
         row("color", 28)
@@ -242,7 +251,7 @@ final class RootView: NSView {
         placeButton("scan", "Scan")
         placeLabel("deviceHead", "Device", bold: true)
         placeLabel("hostHead", "Host / IP", secondary: true)
-        placeButton("addPrinter", "Add Printer if Missing", kind: .plain)
+        placeButton("addToMacOS", "Add Scanner to macOS", kind: .plain)
         placeLabel("scanHead", "Scan", bold: true)
         placeCycle("source", "Source", app.source)
         placeCycle("color", "Color", app.color)
@@ -250,7 +259,7 @@ final class RootView: NSView {
         placeCycle("format", "Format", app.format)
         placeLabel("saveHead", "Save to Documents", secondary: true)
         placeButton("logToggle", app.logVisible ? "Hide Log" : "Show Log", kind: .plain)
-        placeLabel("status", app.statusText, secondary: true)
+        placeLabel("status", app.statusText, secondary: true, error: app.statusIsError)
 
         app.hostField.frame = frames["hostField"] ?? .zero
         app.outputField.frame = frames["outputField"] ?? .zero
@@ -285,13 +294,16 @@ final class RootView: NSView {
         v.needsDisplay = true
     }
 
-    func placeLabel(_ key: String, _ text: String, bold: Bool = false, secondary: Bool = false) {
+    func placeLabel(_ key: String, _ text: String, bold: Bool = false, secondary: Bool = false, error: Bool = false) {
         let v: ChromeLabel
         if let existing = chrome[key] as? ChromeLabel {
             v = existing
             v.text = text
+            v.bold = bold
+            v.secondary = secondary
+            v.error = error
         } else {
-            v = ChromeLabel(text, bold: bold, secondary: secondary)
+            v = ChromeLabel(text, bold: bold, secondary: secondary, error: error)
             addSubview(v)
             chrome[key] = v
         }
@@ -317,13 +329,14 @@ final class RootView: NSView {
     func refresh() {
         if let status = chrome["status"] as? ChromeLabel {
             status.text = app.statusText
+            status.error = app.statusIsError
             status.needsDisplay = true
         }
         if let c = chrome["source"] as? ChromeCycle { c.value = app.source; c.needsDisplay = true }
         if let c = chrome["color"] as? ChromeCycle { c.value = app.color; c.needsDisplay = true }
         if let c = chrome["dpi"] as? ChromeCycle { c.value = app.dpi; c.needsDisplay = true }
         if let c = chrome["format"] as? ChromeCycle { c.value = app.format; c.needsDisplay = true }
-        for key in ["discover", "add", "preview", "scan", "addPrinter"] {
+        for key in ["discover", "add", "preview", "scan", "addToMacOS"] {
             chrome[key]?.needsDisplay = true
         }
     }
@@ -335,6 +348,7 @@ final class RootView: NSView {
         case "add": app.addScanner()
         case "preview": app.runPreview()
         case "scan": app.runScan()
+        case "addToMacOS": app.addToMacOS()
         case "addPrinter": app.addPrinter()
         case "source": app.cycle(&app.source, ["platen", "adf"])
         case "color": app.cycle(&app.color, ["color", "gray", "lineart"])
@@ -367,12 +381,14 @@ final class PreviewView: NSView {
         didSet { needsDisplay = true }
     }
     var dragStart: NSPoint?
+    var emptyArt: NSImage?
 
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = false
         translatesAutoresizingMaskIntoConstraints = true
         autoresizingMask = []
+        emptyArt = PreviewView.loadEmptyArt()
     }
 
     required init?(coder: NSCoder) { fatalError() }
@@ -434,16 +450,51 @@ final class PreviewView: NSView {
                 p.stroke()
             }
         } else {
+            if let art = emptyArt, art.size.width > 1, art.size.height > 1 {
+                let box = bounds.insetBy(dx: 28, dy: 40)
+                let sx = box.width / art.size.width
+                let sy = box.height / art.size.height
+                let scale = min(sx, sy)
+                let w = art.size.width * scale
+                let h = art.size.height * scale
+                let r = NSRect(
+                    x: bounds.midX - w / 2,
+                    y: bounds.midY - h / 2 + 10,
+                    width: w,
+                    height: h
+                )
+                art.draw(in: r, from: .zero, operation: .sourceOver, fraction: 1)
+            }
             let attrs: [NSAttributedString.Key: Any] = [
                 .foregroundColor: NSColor.secondaryLabelColor,
                 .font: NSFont.systemFont(ofSize: 13),
             ]
             let size = message.size(withAttributes: attrs)
             message.draw(
-                at: NSPoint(x: max((bounds.width - size.width) / 2, 12), y: (bounds.height - size.height) / 2),
+                at: NSPoint(x: max((bounds.width - size.width) / 2, 12), y: 18),
                 withAttributes: attrs
             )
         }
+    }
+
+    static func loadEmptyArt() -> NSImage? {
+        var paths: [String] = []
+        if let r = Bundle.main.resourcePath {
+            paths.append(r + "/EmptyPreview.png")
+        }
+        let here = Bundle.main.bundlePath
+        paths.append(here + "/Contents/Resources/EmptyPreview.png")
+        paths.append((here as NSString).deletingLastPathComponent + "/gui/EmptyPreview.png")
+        paths.append((here as NSString).deletingLastPathComponent + "/EmptyPreview.png")
+        paths.append(FileManager.default.currentDirectoryPath + "/gui/EmptyPreview.png")
+        paths.append(NSHomeDirectory() + "/Applications/HP M177 Scanner.app/Contents/Resources/EmptyPreview.png")
+        for p in paths {
+            if let img = NSImage(contentsOfFile: p), img.size.width > 16 {
+                img.isTemplate = false
+                return img
+            }
+        }
+        return nil
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -478,10 +529,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     var dpi = "100"
     var format = "jpeg"
     var statusText = "Add the scanner by IP or hostname, then Preview or Scan."
+    var statusIsError = false
     var lastExit: Int32 = 0
     var busy = false
     var logVisible = false
     var logMenuItem: NSMenuItem!
+    var bridgeProcess: Process?
+    let bridgePort: UInt16 = 8087
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         buildMainMenu()
@@ -588,6 +642,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         scanMenu.addItem(menuItem("Preview", #selector(runPreview), "p"))
         scanMenu.addItem(menuItem("Scan", #selector(runScan), "s"))
         scanMenu.addItem(NSMenuItem.separator())
+        scanMenu.addItem(menuItem("Add Scanner to macOS", #selector(addToMacOS)))
         scanMenu.addItem(menuItem("Add Printer if Missing", #selector(addPrinter)))
         let scanItem = NSMenuItem(title: "Scan", action: nil, keyEquivalent: "")
         scanItem.submenu = scanMenu
@@ -649,6 +704,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         1. Enter the printer IP and click Add Scanner.
         2. Preview the glass. Drag a rectangle to crop.
         3. Scan writes ~/Documents/scan-<timestamp>.<ext>.
+        4. Add Scanner to macOS starts a local AirScan bridge. Image Capture, Preview, and other apps can then use HP M177fw (hp-m177). Leave the bridge running.
 
         View → Show Log (⌘L) reveals hp-m177 command output.
 
@@ -864,8 +920,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             var args = ["add-printer"]
             if !host.isEmpty { args.append(host) }
             return d.runHpStatus(args)
+        case "macos", "add-to-macos":
+            return d.execAddToMacOS(openCapture: false)
         default:
-            fputs("unknown --exec verb '\(verb)' (use add|scan|preview|discover|add-printer)\n", stderr)
+            fputs("unknown --exec verb '\(verb)' (use add|scan|preview|discover|add-printer|macos)\n", stderr)
             return 2
         }
     }
@@ -966,6 +1024,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     @objc func addScanner() {
         let host = hostField.stringValue.trimmingCharacters(in: .whitespaces)
         guard !host.isEmpty else {
+            statusIsError = true
             statusText = "Enter a host or IP first."
             root?.refresh()
             return
@@ -993,10 +1052,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             if code == 0, let img = Self.imageFromScan(dest) {
                 self.preview.image = img
                 self.preview.selection = nil
+                self.statusIsError = false
                 self.statusText = "Preview ready. Drag a rectangle, then Scan."
             } else {
                 self.preview.image = nil
                 self.preview.message = "Preview failed. Open Show Log for details."
+                self.statusIsError = true
                 self.statusText = "Preview failed. Open Show Log for details."
             }
             self.root?.refresh()
@@ -1025,7 +1086,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 self.preview.image = img
                 self.preview.selection = nil
             } else if code != 0 {
+                self.statusIsError = true
                 self.preview.message = "Scan failed. Open Show Log for details."
+            } else {
+                self.statusIsError = false
             }
         }
     }
@@ -1051,6 +1115,165 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         runHpAsync(args)
     }
 
+    @objc func addToMacOS() {
+        let host = (window != nil ? hostField.stringValue : "").trimmingCharacters(in: .whitespaces)
+        if Self.savedHost() == nil {
+            guard !host.isEmpty else {
+                statusIsError = true
+                statusText = "Enter a host or IP, click Add Scanner, then add it to macOS."
+                root?.refresh()
+                return
+            }
+            runHpAsync(["add", host]) { [weak self] code, _ in
+                guard let self else { return }
+                if code == 0 {
+                    self.beginBridge(openCapture: true)
+                }
+            }
+            return
+        }
+        beginBridge(openCapture: true)
+    }
+
+    func execAddToMacOS(openCapture: Bool) -> Int32 {
+        let (ok, msg) = startBridge(openCapture: openCapture)
+        FileHandle.standardOutput.write(Data((msg + "\n").utf8))
+        lastExit = ok ? 0 : 1
+        return lastExit
+    }
+
+    func beginBridge(openCapture: Bool) {
+        if CommandLine.arguments.contains("--button-smoke") {
+            _ = startBridge(openCapture: false)
+            return
+        }
+        if busy { return }
+        busy = true
+        statusIsError = false
+        statusText = "Adding scanner to macOS…"
+        root?.refresh()
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self else { return }
+            let (ok, msg) = self.startBridge(openCapture: openCapture)
+            DispatchQueue.main.async {
+                self.busy = false
+                self.lastExit = ok ? 0 : 1
+                self.appendLog("\(msg)\n")
+                self.statusIsError = !ok
+                self.statusText = ok
+                    ? "Available to other apps as HP M177fw (hp-m177)."
+                    : msg
+                self.root?.refresh()
+            }
+        }
+    }
+
+    func startBridge(openCapture: Bool) -> (Bool, String) {
+        if bridgeCapsOk() {
+            if openCapture {
+                DispatchQueue.main.async { self.openImageCapture() }
+            }
+            return (true, "eSCL already listening on http://127.0.0.1:\(bridgePort)/eSCL/ScannerCapabilities")
+        }
+        guard let bin = bridgeBinary() else {
+            return (false, "hp-m177-bridge is missing. Run scripts/install-gui.sh.")
+        }
+        if let running = bridgeProcess, running.isRunning {
+            _ = waitForBridge(seconds: 4)
+            if bridgeCapsOk() {
+                if openCapture {
+                    DispatchQueue.main.async { self.openImageCapture() }
+                }
+                return (true, "eSCL listening on http://127.0.0.1:\(bridgePort)/eSCL/ScannerCapabilities")
+            }
+        }
+        let logPath = NSTemporaryDirectory() + "hp-m177-bridge.log"
+        if !FileManager.default.fileExists(atPath: logPath) {
+            FileManager.default.createFile(atPath: logPath, contents: Data(), attributes: nil)
+        }
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: bin)
+        proc.arguments = ["--port", "\(bridgePort)"]
+        do {
+            let log = try FileHandle(forWritingTo: URL(fileURLWithPath: logPath))
+            log.seekToEndOfFile()
+            proc.standardOutput = log
+            proc.standardError = log
+            proc.standardInput = FileHandle.nullDevice
+            try proc.run()
+            _ = setpgid(proc.processIdentifier, proc.processIdentifier)
+            bridgeProcess = proc
+        } catch {
+            if bridgeCapsOk() {
+                if openCapture {
+                    DispatchQueue.main.async { self.openImageCapture() }
+                }
+                return (true, "eSCL already listening on http://127.0.0.1:\(bridgePort)/eSCL/ScannerCapabilities")
+            }
+            return (false, "Could not start hp-m177-bridge: \(error.localizedDescription)")
+        }
+        let ready = waitForBridge(seconds: 5)
+        if !ready {
+            return (false, "hp-m177-bridge started but eSCL did not answer on port \(bridgePort). Open Show Log for details.")
+        }
+        if openCapture {
+            DispatchQueue.main.async { self.openImageCapture() }
+        }
+        return (true, "eSCL listening on http://127.0.0.1:\(bridgePort)/eSCL/ScannerCapabilities (Advertised _uscan._tcp as HP M177fw (hp-m177))")
+    }
+
+    func waitForBridge(seconds: Double) -> Bool {
+        let deadline = Date().addingTimeInterval(seconds)
+        while Date() < deadline {
+            if bridgeCapsOk() { return true }
+            Thread.sleep(forTimeInterval: 0.12)
+        }
+        return bridgeCapsOk()
+    }
+
+    func bridgeCapsOk() -> Bool {
+        guard let url = URL(string: "http://127.0.0.1:\(bridgePort)/eSCL/ScannerCapabilities") else {
+            return false
+        }
+        var req = URLRequest(url: url)
+        req.timeoutInterval = 0.6
+        req.httpMethod = "GET"
+        let sem = DispatchSemaphore(value: 0)
+        var ok = false
+        URLSession.shared.dataTask(with: req) { _, resp, _ in
+            if let http = resp as? HTTPURLResponse, (200...299).contains(http.statusCode) {
+                ok = true
+            }
+            sem.signal()
+        }.resume()
+        _ = sem.wait(timeout: .now() + 0.9)
+        return ok
+    }
+
+    func openImageCapture() {
+        let paths = [
+            "/System/Applications/Image Capture.app",
+            "/Applications/Image Capture.app",
+        ]
+        for p in paths {
+            if FileManager.default.fileExists(atPath: p) {
+                NSWorkspace.shared.open(URL(fileURLWithPath: p))
+                return
+            }
+        }
+        if let url = URL(string: "x-apple.systempreferences:com.apple.Print-Scan-Settings.extension") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        // Leave hp-m177-bridge running so Image Capture / Preview keep seeing the scanner.
+        if let p = bridgeProcess, p.isRunning {
+            _ = setpgid(p.processIdentifier, p.processIdentifier)
+        }
+        bridgeProcess = nil
+    }
+
     func runHpAsync(_ args: [String], done: ((Int32, String) -> Void)? = nil) {
         if CommandLine.arguments.contains("--button-smoke") {
             let code = runHpStatus(args)
@@ -1059,6 +1282,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         if busy { return }
         busy = true
+        statusIsError = false
         statusText = Self.runningStatus(for: args)
         root?.refresh()
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
@@ -1069,8 +1293,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 self.lastExit = code
                 self.appendLog("$ hp-m177 \(args.joined(separator: " "))\n\(text)\n")
                 if code != 0 {
+                    self.statusIsError = true
                     self.statusText = Self.shortFailure(for: args)
                 } else if done == nil {
+                    self.statusIsError = false
                     self.statusText = "Done."
                 }
                 self.root?.refresh()
@@ -1117,6 +1343,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             (here as NSString).appendingPathComponent("hp-m177"),
             (here as NSString).deletingLastPathComponent + "/hp-m177",
             NSHomeDirectory() + "/.cargo/bin/hp-m177",
+        ]
+        return candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
+    }
+
+    func bridgeBinary() -> String? {
+        if let env = ProcessInfo.processInfo.environment["HP_M177_BRIDGE"],
+           FileManager.default.isExecutableFile(atPath: env) {
+            return env
+        }
+        let here = Bundle.main.bundlePath
+        let candidates = [
+            here + "/Contents/MacOS/hp-m177-bridge",
+            (here as NSString).appendingPathComponent("hp-m177-bridge"),
+            (here as NSString).deletingLastPathComponent + "/hp-m177-bridge",
+            NSHomeDirectory() + "/.cargo/bin/hp-m177-bridge",
         ]
         return candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
     }

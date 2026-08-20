@@ -87,7 +87,9 @@ retrieve the client sends a best-effort `CancelJob`.
 `hp-m177-bridge` implements modern eSCL (`2011/05/03`) toward the Mac and
 calls the shared `scan()` backend toward the MFP (SOAP, WSD, or native eSCL
 as recorded on the device — not SOAP-only). Tests drive this against
-`hp-m177-fake`. Image Capture sees platen+ADF, color+gray, JPEG+PDF.
+`hp-m177-fake`. Image Capture sees platen+ADF, color+gray, JPEG+PDF. The
+AppKit **Add Scanner to macOS** action (and `--exec macos`) launches this
+binary and keeps it running so Preview and other programs can scan.
 
 PDF output is always a **one-page** JPEG wrapper (`finalize()` keeps the
 first retrieved page). TIFF is produced locally by the CLI/GUI; the eSCL

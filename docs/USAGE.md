@@ -23,6 +23,7 @@ icu 2.3, which need edition 2024 (Cargo 1.85+).
 | --- | --- |
 | `HP_M177_HOME` | Directory for `devices.json` (default: `~/Library/Application Support/hp-m177`) |
 | `HP_M177_BIN` | Path to `hp-m177` used by the AppKit GUI (install script sets this in the `.app`) |
+| `HP_M177_BRIDGE` | Path to `hp-m177-bridge` used by **Add Scanner to macOS** |
 | `HP_M177_NATIVE_GUI` | Optional override for the compiled Swift binary |
 | `HP_M177_FAKE` | Host used by `hp-m177-gui --smoke` |
 
@@ -82,6 +83,7 @@ The native helper (same code as the buttons, including Preview) also accepts:
 hp-m177-native-gui --exec add --host <printer-ip>
 hp-m177-native-gui --exec scan --source platen --color color --dpi 300 --format jpeg --output ~/Documents/scan.jpg
 hp-m177-native-gui --exec preview --host <printer-ip>
+hp-m177-native-gui --exec macos
 ```
 
 Exit status is 0 on success. stdout is the CLI/API log.
@@ -101,11 +103,15 @@ The window title is **HP M177 Scanner**. Use **Discover**, **Add Scanner**,
 **Preview**, and **Scan** (or the **Scan** menu). Source / color / DPI /
 format are click-to-cycle rows. Files go to `~/Documents/scan-<unix>.<ext>`
 (GUI default **100 dpi**). After Preview, drag a rectangle to crop; Scan
-clears the overlay. **View → Show Log** (⌘L) or the Show Log control toggles
+clears the overlay. **Add Scanner to macOS** starts bundled `hp-m177-bridge`
+on port 8087, advertises `_uscan._tcp` as `HP M177fw (hp-m177)`, and opens
+Image Capture so Preview and other apps can scan. Failed status lines are
+red; CLI dumps stay in the hideable log. The empty preview pane shows a
+flatbed scanner. **View → Show Log** (⌘L) or the Show Log control toggles
 `hp-m177` command output (off by default). **About** shows the version;
 **Help** explains the flow; **Quit** (⌘Q) exits. **Add Printer if Missing**
-only creates an AirPrint queue when none exists. The app icon is a flatbed
-scanner (open lid / glass), not a printer.
+(Scan menu) only creates an AirPrint queue when none exists. The app icon
+is a flatbed scanner (open lid / glass), not a printer.
 
 Developer flags:
 
@@ -144,14 +150,20 @@ hp-m177-fake --adf-empty
 `--adf-empty` reports no paper in the ADF (RetrieveImage returns the empty-ADF
 fault).
 
-## Adding the scanner in System Settings
+## Adding the scanner in System Settings / Image Capture
+
+From the GUI: **Add Scanner**, then **Add Scanner to macOS**. Or:
 
 1. `hp-m177 add <printer-ip>`
-2. Leave `hp-m177-bridge` running.
-3. **System Settings → Printers & Scanners** should list a network scanner
+2. Leave `hp-m177-bridge` running (`hp-m177-bridge --port 8087`, or the GUI
+   button, or `hp-m177-native-gui --exec macos`).
+3. **Image Capture**, **Preview → File → Import from Scanner…**, or
+   **System Settings → Printers & Scanners** should list a network scanner
    named `HP M177fw (hp-m177)` once Bonjour `_uscan._tcp` is visible.
 4. Do not remove the existing **HP Color LaserJet Pro MFP M177fw** print
    queue.
 
 If Bonjour is filtered, add the scanner as a URL:
 `http://127.0.0.1:8087` (AirScan / eSCL).
+
+The bridge stays up after the GUI quits. Stop it with `killall hp-m177-bridge`.

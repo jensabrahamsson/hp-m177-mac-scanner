@@ -37,7 +37,7 @@ Installs CLI tools to `~/.cargo/bin` and the app bundle to
 | `src/wsd.rs` | Microsoft WSD Scan on TCP 3911 (`dib` / BMP) |
 | `src/escl.rs` / `src/facade.rs` | Local AirScan surface |
 | `src/fake.rs` | Protocol-accurate SOAP/DIME + WSD `/scanner` stand-in for tests |
-| `gui/HP-M177-Scan.swift` | AppKit window (`ChromeButton` subviews; NSButton cells do not paint). Hideable log; About/Help/Quit. Click-free: `--exec`, `--layout-check`, `--button-smoke` |
+| `gui/HP-M177-Scan.swift` | AppKit window (`ChromeButton` subviews; NSButton cells do not paint). Hideable log; red error status; empty-preview scanner art; **Add Scanner to macOS** starts `hp-m177-bridge`. About/Help/Quit. Click-free: `--exec`, `--layout-check`, `--button-smoke` |
 | `tests/` | Integration tests that launch shipped binaries |
 
 ## Rules of change
@@ -59,6 +59,7 @@ Installs CLI tools to `~/.cargo/bin` and the app bundle to
 | --- | --- |
 | `HP_M177_HOME` | Directory for `devices.json` (tests set this) |
 | `HP_M177_BIN` | `hp-m177` path used by the AppKit helper |
+| `HP_M177_BRIDGE` | `hp-m177-bridge` path used by Add Scanner to macOS |
 | `HP_M177_NATIVE_GUI` | Override for the compiled Swift binary |
 | `HP_M177_FAKE` | Host for `hp-m177-gui --smoke` |
 

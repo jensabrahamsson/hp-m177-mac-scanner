@@ -97,9 +97,12 @@ The window title is **HP M177 Scanner**. **Discover**, **Add Scanner**,
 stock `NSButton` cells do not appear here). Source / color / DPI / format
 are click-to-cycle rows. Files default to `~/Documents/scan-<timestamp>.<ext>`
 at **100 dpi**. Drag a rectangle on Preview to crop; Scan clears the overlay.
-**View → Show Log** (or the Show Log control) reveals `hp-m177` output,
-hidden by default. The app menu has **About**, **Version**, **Quit**, and
-**Help**. The Dock icon is a lid-open flatbed scanner.
+**Add Scanner to macOS** starts the bundled `hp-m177-bridge` and advertises
+`_uscan._tcp` so Image Capture, Preview, and other apps can use
+`HP M177fw (hp-m177)`. **View → Show Log** (or the Show Log control) reveals
+`hp-m177` output, hidden by default. Failed status lines are red. The empty
+preview pane shows a flatbed scanner. The app menu has **About**, **Version**,
+**Quit**, and **Help**. The Dock icon is a lid-open flatbed scanner.
 
 The same path is scriptable (no clicks):
 
@@ -154,7 +157,14 @@ hp-m177 scan --region 500,500,4000,6000 --format jpeg
 
 ## Image Capture / Preview
 
-Keep the AirPrint printer as-is. In a terminal:
+Keep the AirPrint printer as-is. The MFP does not advertise AirScan itself,
+so this Mac must run a local eSCL bridge.
+
+From the GUI: **Add Scanner**, then **Add Scanner to macOS**. That starts
+`hp-m177-bridge` (port **8087**), advertises `_uscan._tcp`, and opens
+Image Capture. The bridge stays running after you quit the GUI.
+
+From a terminal:
 
 ```bash
 hp-m177 add <printer-ip>
@@ -168,9 +178,10 @@ While the bridge is running it:
 - Advertises `_uscan._tcp` with `rs=eSCL`, `is=platen,adf`,
   `cs=color,grayscale`, `pdl=image/jpeg,application/pdf`
 
-Open **Image Capture**, **Preview → File → Import from iPhone or…**, or
+Open **Image Capture**, **Preview → File → Import from Scanner…**, or
 **System Settings → Printers & Scanners**. The scanner appears as
-`HP M177fw (hp-m177)`.
+`HP M177fw (hp-m177)`. If Bonjour is filtered, add the URL
+`http://127.0.0.1:8087`. Stop sharing with `killall hp-m177-bridge`.
 
 ## Optional: add the printer
 
