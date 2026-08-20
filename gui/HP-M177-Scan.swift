@@ -329,7 +329,16 @@ final class RootView: NSView {
 
 final class PreviewView: NSView {
     var image: NSImage? {
-        didSet { needsDisplay = true }
+        didSet {
+            needsDisplay = true
+            display()
+        }
+    }
+    var message: String = "Preview — Scan Preview, then drag a region" {
+        didSet {
+            needsDisplay = true
+            display()
+        }
     }
     var selection: NSRect? {
         didSet { needsDisplay = true }
@@ -338,7 +347,9 @@ final class PreviewView: NSView {
 
     override init(frame: NSRect) {
         super.init(frame: frame)
-        paintPrepare(self)
+        wantsLayer = false
+        translatesAutoresizingMaskIntoConstraints = true
+        autoresizingMask = []
     }
 
     required init?(coder: NSCoder) { fatalError() }
@@ -400,14 +411,13 @@ final class PreviewView: NSView {
                 p.stroke()
             }
         } else {
-            let msg = "Preview — Scan Preview, then drag a region"
             let attrs: [NSAttributedString.Key: Any] = [
                 .foregroundColor: NSColor.secondaryLabelColor,
                 .font: NSFont.systemFont(ofSize: 13),
             ]
-            let size = msg.size(withAttributes: attrs)
-            msg.draw(
-                at: NSPoint(x: (bounds.width - size.width) / 2, y: (bounds.height - size.height) / 2),
+            let size = message.size(withAttributes: attrs)
+            message.draw(
+                at: NSPoint(x: max((bounds.width - size.width) / 2, 12), y: (bounds.height - size.height) / 2),
                 withAttributes: attrs
             )
         }
@@ -465,7 +475,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         styleField(hostField)
         hostField.placeholderString = "IPv4 or hostname.local"
-        hostField.stringValue = ""
+        hostField.stringValue = Self.savedHost() ?? ""
         hostField.target = self
         hostField.action = #selector(addScanner)
         styleField(outputField)
@@ -728,6 +738,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         return docs.appendingPathComponent("scan-\(ts).\(ext)").path
     }
 
+    static func savedHost() -> String? {
+        let dir = ProcessInfo.processInfo.environment["HP_M177_HOME"]
+            ?? (NSHomeDirectory() + "/Library/Application Support/hp-m177")
+        let url = URL(fileURLWithPath: dir).appendingPathComponent("devices.json")
+        guard let data = try? Data(contentsOf: url),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let devices = obj["devices"] as? [[String: Any]]
+        else { return nil }
+        let def = obj["default_id"] as? String
+        let rec = devices.first { $0["id"] as? String == def } ?? devices.first
+        return rec?["host"] as? String
+    }
+
+    static func imageFromScan(_ path: String) -> NSImage? {
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)), data.count > 128 else {
+            return nil
+        }
+        if let img = NSImage(data: data), img.size.width >= 1, img.size.height >= 1 {
+            img.isTemplate = false
+            return img
+        }
+        guard let rep = NSBitmapImageRep(data: data) else { return nil }
+        let img = NSImage(size: NSSize(width: CGFloat(rep.pixelsWide), height: CGFloat(rep.pixelsHigh)))
+        img.addRepresentation(rep)
+        return img
+    }
+
     static func smoke(_ argv: [String]) -> Int32 {
         var host = ""
         var output = defaultDocumentsPath(ext: "jpg")
@@ -780,7 +817,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     @objc func runPreview() {
-        let dest = NSTemporaryDirectory() + "hp-m177-preview.jpg"
+        let dest = NSTemporaryDirectory() + "hp-m177-preview-\(Int(Date().timeIntervalSince1970)).jpg"
+        preview.message = "Scanning preview…"
+        preview.image = nil
         runHpAsync([
             "scan",
             "--source", source,
@@ -788,14 +827,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             "--dpi", "100",
             "--format", "jpeg",
             "--output", dest,
-        ]) { [weak self] code, _ in
+        ]) { [weak self] code, text in
             guard let self else { return }
-            if code == 0, let img = NSImage(contentsOfFile: dest) {
+            if code == 0, let img = Self.imageFromScan(dest) {
                 self.preview.image = img
                 self.preview.selection = nil
                 self.statusText = "Preview ready. Drag a rectangle, then Scan."
-                self.root?.refresh()
+            } else {
+                let tail = text.split(whereSeparator: \.isNewline).suffix(2).joined(separator: " ")
+                self.preview.image = nil
+                self.preview.message = "Preview failed (exit \(code)). \(tail)"
+                self.statusText = self.preview.message
             }
+            self.root?.refresh()
         }
     }
 
@@ -814,10 +858,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if let region = regionThousandths() {
             args += ["--region", region]
         }
-        runHpAsync(args) { [weak self] code, _ in
+        runHpAsync(args) { [weak self] code, text in
             guard let self else { return }
-            if code == 0, !out.isEmpty, let img = NSImage(contentsOfFile: out) {
+            if code == 0, !out.isEmpty, let img = Self.imageFromScan(out) {
                 self.preview.image = img
+            } else if code != 0 {
+                let tail = text.split(whereSeparator: \.isNewline).suffix(2).joined(separator: " ")
+                self.preview.message = "Scan failed (exit \(code)). \(tail)"
             }
         }
     }
@@ -860,11 +907,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 self.busy = false
                 self.lastExit = code
                 self.appendLog("$ hp-m177 \(args.joined(separator: " "))\n\(text)\n")
-                if code == 0 {
-                    self.statusText = "Done."
-                } else {
+                if code != 0 {
                     let tail = text.split(whereSeparator: \.isNewline).suffix(2).joined(separator: " ")
                     self.statusText = "Failed (exit \(code)). \(tail)"
+                } else if done == nil {
+                    self.statusText = "Done."
                 }
                 self.root?.refresh()
                 done?(code, text)

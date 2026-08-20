@@ -52,6 +52,10 @@ fn appkit_gui_exists_and_invokes_cli() {
         swift.contains("--button-smoke") && swift.contains("ChromeButton") && swift.contains("runHpAsync"),
         "window buttons must be clickable and must not block the UI on SOAP"
     );
+    assert!(
+        swift.contains("imageFromScan") && swift.contains("hp-m177-preview-"),
+        "Preview must load JPEG bytes from a unique temp file, not a leftover 8x8"
+    );
 }
 
 #[test]
