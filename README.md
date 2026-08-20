@@ -92,14 +92,14 @@ open "$HOME/Applications/HP M177 Scanner.app"
 hp-m177-gui
 ```
 
-The window title is **HP M177 Scanner**. Stock AppKit buttons
-**Discover**, **Add Scanner**, **Preview**, and **Scan** sit along the
-top. The left column has Host/IP and pop-up menus for source, color, DPI,
-and format. Files default to `~/Documents/scan-<timestamp>.<ext>` at
-**100 dpi**. Drag a rectangle on Preview to crop; the overlay clears after
-Scan. **View → Show Log** reveals `hp-m177` output (hidden by default).
-The app menu has **About**, **Version**, **Quit**, and **Help**. The Dock
-icon is a lid-open flatbed scanner.
+The window title is **HP M177 Scanner**. **Discover**, **Add Scanner**,
+**Preview**, and **Scan** sit along the top (drawn as window subviews;
+stock `NSButton` cells do not appear here). Source / color / DPI / format
+are click-to-cycle rows. Files default to `~/Documents/scan-<timestamp>.<ext>`
+at **100 dpi**. Drag a rectangle on Preview to crop; Scan clears the overlay.
+**View → Show Log** (or the Show Log control) reveals `hp-m177` output,
+hidden by default. The app menu has **About**, **Version**, **Quit**, and
+**Help**. The Dock icon is a lid-open flatbed scanner.
 
 The same path is scriptable (no clicks):
 

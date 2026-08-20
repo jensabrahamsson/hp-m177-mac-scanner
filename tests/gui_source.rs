@@ -21,8 +21,8 @@ fn appkit_gui_exists_and_invokes_cli() {
     let swift = include_str!("../gui/HP-M177-Scan.swift");
     assert!(swift.contains("NSWindow"), "AppKit window missing");
     assert!(
-        swift.contains("NSButton") && swift.contains("NSPopUpButton") && swift.contains("RootView"),
-        "window chrome must be stock AppKit controls"
+        swift.contains("ChromeButton") && swift.contains("RootView"),
+        "buttons must be custom-drawn subviews (NSButton cells do not appear in this window)"
     );
     assert!(
         swift.contains("\"add\"") && swift.contains("\"scan\""),
@@ -53,7 +53,7 @@ fn appkit_gui_exists_and_invokes_cli() {
     assert!(swift.contains("tiff") || swift.contains("TIFF"));
     assert!(swift.contains("lineart") || swift.contains("B/W") || swift.contains("bw"));
     assert!(
-        swift.contains("--button-smoke") && swift.contains("NSButton") && swift.contains("runHpAsync"),
+        swift.contains("--button-smoke") && swift.contains("ChromeButton") && swift.contains("runHpAsync"),
         "window buttons must be clickable and must not block the UI on SOAP"
     );
     assert!(
@@ -119,7 +119,7 @@ fn docs_match_shipped_install_scan_and_gui_flags() {
     assert!(usage.contains("--button-smoke"));
     assert!(usage.contains("--adf-empty"));
     assert!(swift.contains("--exec") && swift.contains("--layout-check") && swift.contains("--button-smoke"));
-    assert!(swift.contains("NSButton") && swift.contains("toggleLog"));
+    assert!(swift.contains("ChromeButton") && swift.contains("toggleLog"));
     assert!(protocol.contains("scan()") && protocol.contains("WSD"));
     assert!(protocol.contains("Error 13"));
     assert!(

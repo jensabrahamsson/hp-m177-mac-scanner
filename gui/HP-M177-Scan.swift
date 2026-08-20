@@ -26,6 +26,330 @@ app.setActivationPolicy(.regular)
 app.delegate = delegate
 app.run()
 
+/// Same drawing path as PreviewView, which the user can see. The window
+/// content view's draw(_:) is not composited on layer-backed macOS.
+func paintPrepare(_ v: NSView) {
+    v.wantsLayer = true
+    v.layerContentsRedrawPolicy = .onSetNeedsDisplay
+    v.translatesAutoresizingMaskIntoConstraints = true
+    v.autoresizingMask = []
+}
+
+final class ChromeButton: NSView {
+    enum Kind { case accent, plain }
+    var title: String
+    var key: String
+    var kind: Kind
+    weak var owner: RootView?
+    var pressed = false
+
+    init(title: String, key: String, kind: Kind = .accent) {
+        self.title = title
+        self.key = key
+        self.kind = kind
+        super.init(frame: .zero)
+        paintPrepare(self)
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+    override var isOpaque: Bool { true }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let disabled = owner?.app?.busy == true
+        let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 6, yRadius: 6)
+        let fill: NSColor
+        let stroke: NSColor
+        let fg: NSColor
+        if kind == .plain {
+            fill = pressed ? NSColor(srgbRed: 0.86, green: 0.86, blue: 0.88, alpha: 1)
+                : NSColor(srgbRed: 0.94, green: 0.94, blue: 0.96, alpha: 1)
+            stroke = NSColor(srgbRed: 0.72, green: 0.72, blue: 0.75, alpha: 1)
+            fg = NSColor(srgbRed: 0.12, green: 0.12, blue: 0.14, alpha: 1)
+        } else if disabled {
+            fill = NSColor(srgbRed: 0.55, green: 0.62, blue: 0.78, alpha: 1)
+            stroke = fill
+            fg = .white
+        } else if pressed {
+            fill = NSColor.controlAccentColor.blended(withFraction: 0.2, of: .black) ?? NSColor.controlAccentColor
+            stroke = fill
+            fg = .white
+        } else {
+            fill = NSColor.controlAccentColor
+            stroke = fill
+            fg = .white
+        }
+        fill.setFill()
+        path.fill()
+        stroke.setStroke()
+        path.lineWidth = 1
+        path.stroke()
+        let attrs: [NSAttributedString.Key: Any] = [
+            .foregroundColor: fg,
+            .font: NSFont.systemFont(ofSize: 13, weight: .medium),
+        ]
+        let size = title.size(withAttributes: attrs)
+        title.draw(
+            at: NSPoint(x: (bounds.width - size.width) / 2, y: (bounds.height - size.height) / 2),
+            withAttributes: attrs
+        )
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        guard owner?.app?.busy != true else { return }
+        pressed = true
+        needsDisplay = true
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        let inside = bounds.contains(convert(event.locationInWindow, from: nil))
+        pressed = false
+        needsDisplay = true
+        if inside { owner?.activate(key) }
+    }
+}
+
+final class ChromeLabel: NSView {
+    var text: String
+    var bold: Bool
+    var secondary: Bool
+
+    init(_ text: String, bold: Bool = false, secondary: Bool = false) {
+        self.text = text
+        self.bold = bold
+        self.secondary = secondary
+        super.init(frame: .zero)
+        paintPrepare(self)
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.windowBackgroundColor.setFill()
+        bounds.fill()
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineBreakMode = .byWordWrapping
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: bold ? NSFont.boldSystemFont(ofSize: 13) : NSFont.systemFont(ofSize: 12),
+            .foregroundColor: secondary
+                ? NSColor(srgbRed: 0.35, green: 0.35, blue: 0.38, alpha: 1)
+                : NSColor(srgbRed: 0.10, green: 0.10, blue: 0.12, alpha: 1),
+            .paragraphStyle: paragraph,
+        ]
+        text.draw(in: bounds, withAttributes: attrs)
+    }
+}
+
+final class ChromeCycle: NSView {
+    var caption: String
+    var key: String
+    var value: String
+    weak var owner: RootView?
+
+    init(caption: String, key: String, value: String) {
+        self.caption = caption
+        self.key = key
+        self.value = value
+        super.init(frame: .zero)
+        paintPrepare(self)
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 5, yRadius: 5)
+        NSColor(srgbRed: 0.95, green: 0.95, blue: 0.97, alpha: 1).setFill()
+        path.fill()
+        NSColor(srgbRed: 0.45, green: 0.45, blue: 0.50, alpha: 1).setStroke()
+        path.lineWidth = 1
+        path.stroke()
+        let capAttrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 11),
+            .foregroundColor: NSColor(srgbRed: 0.35, green: 0.35, blue: 0.38, alpha: 1),
+        ]
+        let valAttrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 13, weight: .medium),
+            .foregroundColor: NSColor(srgbRed: 0.10, green: 0.10, blue: 0.12, alpha: 1),
+        ]
+        caption.draw(at: NSPoint(x: 8, y: bounds.height / 2 - 7), withAttributes: capAttrs)
+        let val = "\(value)  ▾"
+        let size = val.size(withAttributes: valAttrs)
+        val.draw(at: NSPoint(x: bounds.width - size.width - 8, y: bounds.height / 2 - 8), withAttributes: valAttrs)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        guard bounds.contains(convert(event.locationInWindow, from: nil)) else { return }
+        owner?.activate(key)
+    }
+}
+
+final class RootView: NSView {
+    weak var app: AppDelegate!
+    var frames: [String: NSRect] = [:]
+    var chrome: [String: NSView] = [:]
+
+    override var isOpaque: Bool { true }
+    override var wantsUpdateLayer: Bool { true }
+
+    override func updateLayer() {
+        layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+    }
+
+    override func layout() {
+        super.layout()
+        layoutChrome()
+    }
+
+    func layoutChrome() {
+        let b = bounds
+        guard b.width > 80, b.height > 80, app != nil else { return }
+        let logH: CGFloat = app.logVisible ? 110 : 0
+        let topH: CGFloat = 32
+        let topY = b.height - 12 - topH
+        let gap: CGFloat = 8
+        let btnW = max((b.width - 32 - 3 * gap) / 4, 80)
+        frames["discover"] = NSRect(x: 16, y: topY, width: btnW, height: topH)
+        frames["add"] = NSRect(x: 16 + btnW + gap, y: topY, width: btnW, height: topH)
+        frames["preview"] = NSRect(x: 16 + 2 * (btnW + gap), y: topY, width: btnW, height: topH)
+        frames["scan"] = NSRect(x: 16 + 3 * (btnW + gap), y: topY, width: btnW, height: topH)
+
+        let colX: CGFloat = 16
+        let colW: CGFloat = 300
+        var y = topY - 20
+        func row(_ key: String, _ height: CGFloat, gapAfter: CGFloat = 8) {
+            y -= height
+            frames[key] = NSRect(x: colX, y: y, width: colW, height: height)
+            y -= gapAfter
+        }
+        row("deviceHead", 18, gapAfter: 4)
+        row("hostHead", 16, gapAfter: 4)
+        row("hostField", 24)
+        row("addPrinter", 32, gapAfter: 14)
+        row("scanHead", 18, gapAfter: 6)
+        row("source", 28)
+        row("color", 28)
+        row("dpi", 28)
+        row("format", 28, gapAfter: 12)
+        row("saveHead", 16, gapAfter: 4)
+        row("outputField", 24)
+        row("logToggle", 28, gapAfter: 8)
+        row("status", 40, gapAfter: 0)
+
+        placeButton("discover", "Discover", kind: .plain)
+        placeButton("add", "Add Scanner", kind: .plain)
+        placeButton("preview", "Preview")
+        placeButton("scan", "Scan")
+        placeLabel("deviceHead", "Device", bold: true)
+        placeLabel("hostHead", "Host / IP", secondary: true)
+        placeButton("addPrinter", "Add Printer if Missing", kind: .plain)
+        placeLabel("scanHead", "Scan", bold: true)
+        placeCycle("source", "Source", app.source)
+        placeCycle("color", "Color", app.color)
+        placeCycle("dpi", "DPI", app.dpi)
+        placeCycle("format", "Format", app.format)
+        placeLabel("saveHead", "Save to Documents", secondary: true)
+        placeButton("logToggle", app.logVisible ? "Hide Log" : "Show Log", kind: .plain)
+        placeLabel("status", app.statusText, secondary: true)
+
+        app.hostField.frame = frames["hostField"] ?? .zero
+        app.outputField.frame = frames["outputField"] ?? .zero
+        let previewY: CGFloat = app.logVisible ? logH + 12 : 16
+        let previewTop = topY - 12
+        app.preview.frame = NSRect(
+            x: colX + colW + 16,
+            y: previewY,
+            width: max(b.width - (colX + colW + 16) - 16, 200),
+            height: max(previewTop - previewY, 200)
+        )
+        app.scroll.isHidden = !app.logVisible
+        if app.logVisible {
+            app.scroll.frame = NSRect(x: 16, y: 12, width: b.width - 32, height: logH)
+        }
+        refresh()
+    }
+
+    func placeButton(_ key: String, _ title: String, kind: ChromeButton.Kind = .accent) {
+        let v: ChromeButton
+        if let existing = chrome[key] as? ChromeButton {
+            v = existing
+            v.title = title
+            v.kind = kind
+        } else {
+            v = ChromeButton(title: title, key: key, kind: kind)
+            v.owner = self
+            addSubview(v)
+            chrome[key] = v
+        }
+        v.frame = frames[key] ?? .zero
+        v.needsDisplay = true
+    }
+
+    func placeLabel(_ key: String, _ text: String, bold: Bool = false, secondary: Bool = false) {
+        let v: ChromeLabel
+        if let existing = chrome[key] as? ChromeLabel {
+            v = existing
+            v.text = text
+        } else {
+            v = ChromeLabel(text, bold: bold, secondary: secondary)
+            addSubview(v)
+            chrome[key] = v
+        }
+        v.frame = frames[key] ?? .zero
+        v.needsDisplay = true
+    }
+
+    func placeCycle(_ key: String, _ caption: String, _ value: String) {
+        let v: ChromeCycle
+        if let existing = chrome[key] as? ChromeCycle {
+            v = existing
+            v.value = value
+        } else {
+            v = ChromeCycle(caption: caption, key: key, value: value)
+            v.owner = self
+            addSubview(v)
+            chrome[key] = v
+        }
+        v.frame = frames[key] ?? .zero
+        v.needsDisplay = true
+    }
+
+    func refresh() {
+        if let status = chrome["status"] as? ChromeLabel {
+            status.text = app.statusText
+            status.needsDisplay = true
+        }
+        if let c = chrome["source"] as? ChromeCycle { c.value = app.source; c.needsDisplay = true }
+        if let c = chrome["color"] as? ChromeCycle { c.value = app.color; c.needsDisplay = true }
+        if let c = chrome["dpi"] as? ChromeCycle { c.value = app.dpi; c.needsDisplay = true }
+        if let c = chrome["format"] as? ChromeCycle { c.value = app.format; c.needsDisplay = true }
+        for key in ["discover", "add", "preview", "scan", "addPrinter"] {
+            chrome[key]?.needsDisplay = true
+        }
+    }
+
+    func activate(_ key: String) {
+        guard let app else { return }
+        switch key {
+        case "discover": app.discoverLan()
+        case "add": app.addScanner()
+        case "preview": app.runPreview()
+        case "scan": app.runScan()
+        case "addPrinter": app.addPrinter()
+        case "source": app.cycle(&app.source, ["platen", "adf"])
+        case "color": app.cycle(&app.color, ["color", "gray", "lineart"])
+        case "dpi": app.cycle(&app.dpi, ["100", "300", "600"])
+        case "format":
+            app.cycle(&app.format, ["jpeg", "pdf", "tiff"])
+            app.formatChanged()
+        case "logToggle":
+            app.toggleLog()
+        default: break
+        }
+        refresh()
+    }
+}
+
 final class PreviewView: NSView {
     var image: NSImage? {
         didSet {
@@ -141,110 +465,23 @@ final class PreviewView: NSView {
     }
 }
 
-final class RootView: NSView {
-    weak var app: AppDelegate!
-    var frames: [String: NSRect] = [:]
-
-    override var isOpaque: Bool { true }
-    override var wantsUpdateLayer: Bool { true }
-    override func updateLayer() {
-        layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
-    }
-
-    override func layout() {
-        super.layout()
-        layoutChrome()
-    }
-
-    func layoutChrome() {
-        guard let app, bounds.width > 80, bounds.height > 80 else { return }
-        let logH: CGFloat = app.logVisible ? 120 : 0
-        let topH: CGFloat = 32
-        let topY = bounds.height - 16 - topH
-        let gap: CGFloat = 8
-        let btnW = max((bounds.width - 32 - 3 * gap) / 4, 80)
-        frames["discover"] = NSRect(x: 16, y: topY, width: btnW, height: topH)
-        frames["add"] = NSRect(x: 16 + btnW + gap, y: topY, width: btnW, height: topH)
-        frames["preview"] = NSRect(x: 16 + 2 * (btnW + gap), y: topY, width: btnW, height: topH)
-        frames["scan"] = NSRect(x: 16 + 3 * (btnW + gap), y: topY, width: btnW, height: topH)
-        app.discoverButton.frame = frames["discover"] ?? .zero
-        app.addButton.frame = frames["add"] ?? .zero
-        app.previewButton.frame = frames["preview"] ?? .zero
-        app.scanButton.frame = frames["scan"] ?? .zero
-
-        let colX: CGFloat = 20
-        let colW: CGFloat = 280
-        var y = topY - 28
-        func place(_ v: NSView, _ h: CGFloat, gapAfter: CGFloat = 6) {
-            y -= h
-            v.frame = NSRect(x: colX, y: y, width: colW, height: h)
-            y -= gapAfter
-        }
-        place(app.deviceHeading, 18, gapAfter: 4)
-        place(app.hostLabel, 16, gapAfter: 4)
-        place(app.hostField, 22)
-        place(app.addPrinterButton, 28, gapAfter: 16)
-        place(app.scanHeading, 18, gapAfter: 6)
-        place(app.sourcePopup, 26)
-        place(app.colorPopup, 26)
-        place(app.dpiPopup, 26)
-        place(app.formatPopup, 26, gapAfter: 12)
-        place(app.saveLabel, 16, gapAfter: 4)
-        place(app.outputField, 22)
-        place(app.logToggle, 18, gapAfter: 8)
-        place(app.statusField, 36, gapAfter: 0)
-
-        let previewBottom: CGFloat = app.logVisible ? 16 + logH + 8 : 16
-        app.preview.frame = NSRect(
-            x: colX + colW + 20,
-            y: previewBottom,
-            width: max(bounds.width - (colX + colW + 20) - 16, 200),
-            height: max(topY - 12 - previewBottom, 200)
-        )
-        app.scroll.isHidden = !app.logVisible
-        if app.logVisible {
-            app.scroll.frame = NSRect(x: 16, y: 12, width: bounds.width - 32, height: logH)
-        }
-        app.discoverButton.isEnabled = !app.busy
-        app.addButton.isEnabled = !app.busy
-        app.previewButton.isEnabled = !app.busy
-        app.scanButton.isEnabled = !app.busy
-        app.addPrinterButton.isEnabled = !app.busy
-    }
-}
-
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     var window: NSWindow!
     var root: RootView!
-    var discoverButton: NSButton!
-    var addButton: NSButton!
-    var previewButton: NSButton!
-    var scanButton: NSButton!
-    var addPrinterButton: NSButton!
-    var logToggle: NSButton!
-    var logMenuItem: NSMenuItem!
     let hostField = NSTextField(string: "")
     let outputField = NSTextField(string: "")
-    let statusField = NSTextField(labelWithString: "")
-    let deviceHeading = NSTextField(labelWithString: "Device")
-    let hostLabel = NSTextField(labelWithString: "Host / IP")
-    let scanHeading = NSTextField(labelWithString: "Scan")
-    let saveLabel = NSTextField(labelWithString: "Save to Documents")
-    let sourcePopup = NSPopUpButton()
-    let colorPopup = NSPopUpButton()
-    let dpiPopup = NSPopUpButton()
-    let formatPopup = NSPopUpButton()
     let logView = NSTextView()
     let preview = PreviewView()
     let scroll = NSScrollView()
-    var logVisible = false
+    var source = "platen"
+    var color = "color"
+    var dpi = "100"
+    var format = "jpeg"
+    var statusText = "Add the scanner by IP or hostname, then Preview or Scan."
     var lastExit: Int32 = 0
     var busy = false
-
-    var source: String { sourcePopup.titleOfSelectedItem ?? "platen" }
-    var color: String { colorPopup.titleOfSelectedItem ?? "color" }
-    var dpi: String { dpiPopup.titleOfSelectedItem ?? "100" }
-    var format: String { formatPopup.titleOfSelectedItem ?? "jpeg" }
+    var logVisible = false
+    var logMenuItem: NSMenuItem!
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         buildMainMenu()
@@ -265,26 +502,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         root.wantsLayer = true
         window.contentView = root
 
-        discoverButton = macButton("Discover", #selector(discoverLan))
-        addButton = macButton("Add Scanner", #selector(addScanner))
-        previewButton = macButton("Preview", #selector(runPreview))
-        previewButton.keyEquivalent = "p"
-        scanButton = macButton("Scan", #selector(runScan))
-        scanButton.keyEquivalent = "\r"
-        addPrinterButton = macButton("Add Printer if Missing", #selector(addPrinter))
-        logToggle = NSButton(checkboxWithTitle: "Show Log", target: self, action: #selector(toggleLog(_:)))
-        logToggle.state = .off
-
-        styleHeading(deviceHeading)
-        styleHeading(scanHeading)
-        styleCaption(hostLabel)
-        styleCaption(saveLabel)
-        statusField.font = NSFont.systemFont(ofSize: 11)
-        statusField.textColor = NSColor.secondaryLabelColor
-        statusField.lineBreakMode = .byWordWrapping
-        statusField.maximumNumberOfLines = 3
-        statusField.stringValue = "Add the scanner, then Preview or Scan."
-
         styleField(hostField)
         hostField.placeholderString = "IPv4 or hostname.local"
         hostField.stringValue = Self.savedHost() ?? ""
@@ -293,13 +510,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         styleField(outputField)
         outputField.stringValue = Self.defaultDocumentsPath(ext: "jpg")
         outputField.placeholderString = "~/Documents/scan-<timestamp>.jpg"
-
-        fillPopup(sourcePopup, ["platen", "adf"], "platen")
-        fillPopup(colorPopup, ["color", "gray", "lineart"], "color")
-        fillPopup(dpiPopup, ["100", "300", "600"], "100")
-        fillPopup(formatPopup, ["jpeg", "pdf", "tiff"], "jpeg")
-        formatPopup.target = self
-        formatPopup.action = #selector(formatChanged)
 
         logView.isEditable = false
         logView.font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
@@ -316,16 +526,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         scroll.borderType = .bezelBorder
         scroll.isHidden = true
 
-        let views: [NSView] = [
-            discoverButton!, addButton!, previewButton!, scanButton!, addPrinterButton!,
-            deviceHeading, hostLabel, hostField, scanHeading, saveLabel, statusField,
-            sourcePopup, colorPopup, dpiPopup, formatPopup, logToggle!,
-            preview, scroll, outputField,
-        ]
-        for v in views {
-            v.translatesAutoresizingMaskIntoConstraints = true
-            root.addSubview(v)
-        }
+        root.addSubview(preview)
+        root.addSubview(scroll)
+        root.addSubview(hostField)
+        root.addSubview(outputField)
         root.layoutChrome()
         appendLog("Using \(hpBinary())\n")
 
@@ -355,11 +559,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
-
-    func windowDidResize(_ notification: Notification) {
-        root.needsLayout = true
-        root.layoutChrome()
-    }
 
     func buildMainMenu() {
         let appName = "HP M177 Scanner"
@@ -395,7 +594,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         main.addItem(scanItem)
 
         let viewMenu = NSMenu(title: "View")
-        logMenuItem = menuItem("Show Log", #selector(toggleLog(_:)), "l")
+        logMenuItem = menuItem("Show Log", #selector(toggleLog), "l")
         viewMenu.addItem(logMenuItem)
         let viewItem = NSMenuItem(title: "View", action: nil, keyEquivalent: "")
         viewItem.submenu = viewMenu
@@ -427,7 +626,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     func versionString() -> String {
         let short = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.1.0"
-        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "9"
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "10"
         return "\(short) (\(build))"
     }
 
@@ -447,14 +646,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let alert = NSAlert()
         alert.messageText = "HP M177 Scanner"
         alert.informativeText = """
-        1. Enter the printer’s IP or hostname and choose Add Scanner.
+        1. Enter the printer IP and click Add Scanner.
         2. Preview the glass. Drag a rectangle to crop.
         3. Scan writes ~/Documents/scan-<timestamp>.<ext>.
 
-        Scan → Discover / Add Scanner / Preview / Scan
-        View → Show Log hides hp-m177 command output (off by default).
-
-        Default preview/scan DPI is 100. 300 dpi can take a minute.
+        View → Show Log (⌘L) reveals hp-m177 command output.
 
         This is not an HP product.
         """
@@ -462,69 +658,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         alert.runModal()
     }
 
-    @objc func toggleLog(_ sender: Any?) {
+    @objc func toggleLog() {
         logVisible.toggle()
-        logToggle.state = logVisible ? .on : .off
-        logMenuItem.state = logVisible ? .on : .off
-        logMenuItem.title = logVisible ? "Hide Log" : "Show Log"
+        logMenuItem?.title = logVisible ? "Hide Log" : "Show Log"
+        logMenuItem?.state = logVisible ? .on : .off
         root.layoutChrome()
     }
 
-    func macButton(_ title: String, _ sel: Selector) -> NSButton {
-        let b = NSButton(title: title, target: self, action: sel)
-        b.bezelStyle = .rounded
-        b.setButtonType(.momentaryPushIn)
-        b.translatesAutoresizingMaskIntoConstraints = true
-        return b
+    func windowDidResize(_ notification: Notification) {
+        root.needsLayout = true
+        root.layoutChrome()
     }
 
-    func fillPopup(_ popup: NSPopUpButton, _ titles: [String], _ selected: String) {
-        popup.removeAllItems()
-        popup.addItems(withTitles: titles)
-        popup.selectItem(withTitle: selected)
-        popup.bezelStyle = .rounded
-        popup.translatesAutoresizingMaskIntoConstraints = true
-    }
-
-    func styleHeading(_ field: NSTextField) {
-        field.font = NSFont.boldSystemFont(ofSize: 13)
-        field.textColor = NSColor.labelColor
-        field.isBezeled = false
-        field.drawsBackground = false
-        field.isEditable = false
-    }
-
-    func styleCaption(_ field: NSTextField) {
-        field.font = NSFont.systemFont(ofSize: 11)
-        field.textColor = NSColor.secondaryLabelColor
-        field.isBezeled = false
-        field.drawsBackground = false
-        field.isEditable = false
-    }
-
-    func styleField(_ field: NSTextField) {
-        field.isEditable = true
-        field.isBezeled = true
-        field.bezelStyle = .roundedBezel
-        field.drawsBackground = true
-        field.backgroundColor = NSColor.textBackgroundColor
-        field.textColor = NSColor.textColor
-        field.font = NSFont.systemFont(ofSize: 13)
-        field.translatesAutoresizingMaskIntoConstraints = true
-    }
-
-    func setStatus(_ text: String) {
-        statusField.stringValue = text
-    }
-
-    func activate(_ key: String) {
-        switch key {
-        case "discover": discoverLan()
-        case "add": addScanner()
-        case "preview": runPreview()
-        case "scan": runScan()
-        case "addPrinter": addPrinter()
-        default: break
+    func cycle(_ value: inout String, _ items: [String]) {
+        if let i = items.firstIndex(of: value) {
+            value = items[(i + 1) % items.count]
+        } else {
+            value = items[0]
         }
     }
 
@@ -540,8 +690,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         let hf = hostField.frame
         let pv = preview.frame
-        let scan = scanButton.frame
-        let disc = discoverButton.frame
+        let scan = root.frames["scan"] ?? .zero
+        let disc = root.frames["discover"] ?? .zero
         var painted = 0
         var png = ""
         let scale: CGFloat = 2
@@ -597,6 +747,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let report = "hostField=\(Int(hf.minX)),\(Int(hf.minY)) \(Int(hf.width))x\(Int(hf.height)) preview=\(Int(pv.minX)),\(Int(pv.minY)) \(Int(pv.width))x\(Int(pv.height)) scan=\(Int(scan.minX)),\(Int(scan.minY)) \(Int(scan.width))x\(Int(scan.height)) discover=\(Int(disc.minX)),\(Int(disc.minY)) \(Int(disc.width))x\(Int(disc.height)) window=\(Int(root.bounds.width))x\(Int(root.bounds.height)) nonWhite=\(painted) png=\(png)\n"
         FileHandle.standardOutput.write(Data(report.utf8))
         let topBand = root.bounds.height * 0.7
+        let hasScan = root.chrome["scan"] is ChromeButton
+        let hasDisc = root.chrome["discover"] is ChromeButton
         let ok = hf.height >= 20 && hf.width >= 80 && hf.minX < 80
             && pv.minX >= 280
             && scan.height >= 20 && scan.width >= 40
@@ -604,7 +756,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             && scan.minY > topBand
             && disc.minY > topBand
             && painted >= 30
-            && NSApp.mainMenu != nil
+            && hasScan && hasDisc
         if !ok {
             fputs("layout-check failed (buttons missing or not drawn)\n", stderr)
         }
@@ -628,15 +780,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         root.layoutChrome()
         hostField.stringValue = host
         outputField.stringValue = output
-        activate("add")
+        root.activate("add")
         if lastExit != 0 { return lastExit }
-        activate("preview")
+        root.activate("preview")
         if lastExit != 0 { return lastExit }
         if preview.image == nil {
             fputs("button-smoke: preview produced no image\n", stderr)
             return 1
         }
-        activate("scan")
+        root.activate("scan")
         if lastExit != 0 { return lastExit }
         if preview.selection != nil {
             fputs("button-smoke: crop overlay still set after scan\n", stderr)
@@ -792,7 +944,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     @objc func addScanner() {
         let host = hostField.stringValue.trimmingCharacters(in: .whitespaces)
         guard !host.isEmpty else {
-            setStatus("Enter a host or IP first.")
+            statusText = "Enter a host or IP first."
+            root?.refresh()
             return
         }
         runHpAsync(["add", host])
@@ -806,7 +959,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let dest = NSTemporaryDirectory() + "hp-m177-preview-\(Int(Date().timeIntervalSince1970)).jpg"
         preview.message = "Scanning preview…"
         preview.image = nil
-        preview.selection = nil
         runHpAsync([
             "scan",
             "--source", source,
@@ -819,14 +971,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             if code == 0, let img = Self.imageFromScan(dest) {
                 self.preview.image = img
                 self.preview.selection = nil
-                self.setStatus("Preview ready. Drag a rectangle, then Scan.")
+                self.statusText = "Preview ready. Drag a rectangle, then Scan."
             } else {
                 let tail = text.split(whereSeparator: \.isNewline).suffix(2).joined(separator: " ")
                 self.preview.image = nil
-                self.preview.selection = nil
                 self.preview.message = "Preview failed (exit \(code)). \(tail)"
-                self.setStatus(self.preview.message)
+                self.statusText = self.preview.message
             }
+            self.root?.refresh()
         }
     }
 
@@ -851,7 +1003,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             if code == 0, !out.isEmpty, let img = Self.imageFromScan(out) {
                 self.preview.image = img
                 self.preview.selection = nil
-                self.setStatus("Done.")
             } else if code != 0 {
                 let tail = text.split(whereSeparator: \.isNewline).suffix(2).joined(separator: " ")
                 self.preview.message = "Scan failed (exit \(code)). \(tail)"
@@ -888,8 +1039,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         if busy { return }
         busy = true
-        setStatus("Running hp-m177 \(args.joined(separator: " "))…")
-        root.layoutChrome()
+        statusText = "Running hp-m177 \(args.joined(separator: " "))…"
+        root?.refresh()
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
             let (code, text) = self.spawnHp(args)
@@ -899,11 +1050,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 self.appendLog("$ hp-m177 \(args.joined(separator: " "))\n\(text)\n")
                 if code != 0 {
                     let tail = text.split(whereSeparator: \.isNewline).suffix(2).joined(separator: " ")
-                    self.setStatus("Failed (exit \(code)). \(tail)")
+                    self.statusText = "Failed (exit \(code)). \(tail)"
                 } else if done == nil {
-                    self.setStatus("Done.")
+                    self.statusText = "Done."
                 }
-                self.root.layoutChrome()
+                self.root?.refresh()
                 done?(code, text)
             }
         }
@@ -938,9 +1089,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         guard window != nil else { return }
         logView.string += text
         logView.scrollToEndOfDocument(nil)
-        if !logVisible, text.contains("Failed") || text.contains("error") {
-            // Keep log hidden; status line already shows the failure.
-        }
     }
 
     func bundledBinary() -> String? {
@@ -965,5 +1113,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             }
         }
         return name
+    }
+
+    func styleField(_ field: NSTextField) {
+        field.isEditable = true
+        field.isBezeled = true
+        field.bezelStyle = .squareBezel
+        field.drawsBackground = true
+        field.backgroundColor = NSColor.white
+        field.textColor = NSColor.black
+        field.font = NSFont.systemFont(ofSize: 13)
+        field.translatesAutoresizingMaskIntoConstraints = true
+        field.autoresizingMask = []
+        paintPrepare(field)
     }
 }

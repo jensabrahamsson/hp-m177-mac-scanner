@@ -97,15 +97,15 @@ hp-m177-gui
 
 Spotlight name: **HP M177 Scanner**.
 
-The window title is **HP M177 Scanner**. Use the AppKit **Discover**, **Add
-Scanner**, **Preview**, and **Scan** buttons, or the **Scan** menu. Source /
-color / DPI / format are pop-up menus. Files go to
-`~/Documents/scan-<unix>.<ext>` (GUI default **100 dpi**). After Preview,
-drag a rectangle to crop; Scan clears the overlay. **View → Show Log**
-toggles the `hp-m177` command log (off by default). **HP M177 Scanner →
-About** shows the version; **Help** explains the flow; **Quit** (⌘Q) exits.
-**Add Printer if Missing** only creates an AirPrint queue when none exists.
-The app icon is a flatbed scanner (open lid / glass), not a printer.
+The window title is **HP M177 Scanner**. Use **Discover**, **Add Scanner**,
+**Preview**, and **Scan** (or the **Scan** menu). Source / color / DPI /
+format are click-to-cycle rows. Files go to `~/Documents/scan-<unix>.<ext>`
+(GUI default **100 dpi**). After Preview, drag a rectangle to crop; Scan
+clears the overlay. **View → Show Log** (⌘L) or the Show Log control toggles
+`hp-m177` command output (off by default). **About** shows the version;
+**Help** explains the flow; **Quit** (⌘Q) exits. **Add Printer if Missing**
+only creates an AirPrint queue when none exists. The app icon is a flatbed
+scanner (open lid / glass), not a printer.
 
 Developer flags:
 
