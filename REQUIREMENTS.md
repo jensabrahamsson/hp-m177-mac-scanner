@@ -38,13 +38,12 @@ names belong to their owners.
     on TCP **8289** (DIME JPEG); if SOAP does not return pixels, Microsoft
     **WSD Scan** on TCP **3911** (`/scanner`, document format `dib`).
 11. **GUI automation** with no clicks: `hp-m177-gui add|scan|list`, the
-    AppKit helper `--exec add|scan|scan-all|preview|discover|macos`, `--layout-check`,
+    AppKit helper `--exec add|scan|scan-all|preview|discover|add-printer|macos`, `--layout-check`,
     and `--button-smoke` (same Add / Preview / Scan handlers as the window).
 12. **Custom Mac app icon** of a **flatbed scanner** (open lid, glass platen),
     not a printer with an output tray (`gui/AppIcon.icns`,
     `CFBundleIconFile=AppIcon`). App name, window title, and Bonjour
-    instance are **HP Color LaserJet Pro MFP M177fw** (the `.app` and the
-    Image Capture listing are `HP Color LaserJet Pro MFP M177fw Scanner`).
+    instance are **HP Color LaserJet Pro MFP M177fw Scanner**.
     The app registers JPEG/PDF/TIFF document types and an Image Capture
     Automatic Task so scans can be sent to it.
 13. **MIT** license. English docs and code comments.

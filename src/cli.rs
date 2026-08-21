@@ -229,6 +229,7 @@ pub fn run(cli: Cli, store: &mut Store, transport: &dyn Transport, out: &mut dyn
             let bind = bind.unwrap_or_else(|| format!("127.0.0.1:{port}"));
             let device = store.default_device().ok();
             let facade = crate::facade::EsclFacade::bind(&bind, device)?;
+            facade.refresh_adf_from_device();
             writeln!(
                 out,
                 "eSCL listening on {}/eSCL/ScannerCapabilities",

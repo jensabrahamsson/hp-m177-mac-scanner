@@ -154,21 +154,14 @@ pub fn extract_image(bytes: &[u8]) -> Result<Vec<u8>> {
     let mut collecting = false;
     for rec in &recs {
         if is_image_type(rec) {
-            collecting = true;
-            image.extend_from_slice(&rec.data);
-            if !rec.chunked {
-                collecting = false;
+            if image.is_empty() {
+                image.extend_from_slice(&rec.data);
+                collecting = rec.chunked;
             }
+            // Extra CF-clear typed image records are separate parts, not glued.
         } else if collecting && rec.typ.is_empty() {
             image.extend_from_slice(&rec.data);
-            if !rec.chunked {
-                collecting = false;
-            }
-        }
-    }
-    if image.is_empty() {
-        for rec in recs.iter().skip(1) {
-            image.extend_from_slice(&rec.data);
+            collecting = rec.chunked;
         }
     }
     if image.is_empty() {
@@ -255,5 +248,18 @@ mod tests {
         assert_eq!(&jpeg[..2], &[0xff, 0xd8]);
         assert_eq!(&jpeg[jpeg.len() - 2..], &[0xff, 0xd9]);
         assert!(jpeg.len() > 4);
+    }
+
+    #[test]
+    fn cf_clear_second_typed_record_is_not_glued() {
+        let first = [0xff, 0xd8, 1, 2, 0xff, 0xd9];
+        let second = [0xff, 0xd8, 9, 9, 9, 0xff, 0xd9];
+        let body = encode(&[
+            DimeRecord::media("text/xml", b"<ok/>".to_vec()),
+            DimeRecord::media("image/jpeg", first.to_vec()),
+            DimeRecord::media("image/jpeg", second.to_vec()),
+        ]);
+        let got = extract_image(&body).unwrap();
+        assert_eq!(got, first, "only the first CF-clear image record");
     }
 }

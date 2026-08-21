@@ -768,7 +768,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func versionString() -> String {
-        let short = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.2.0"
+        let short = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.2.1"
         let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "16"
         return "\(short) (\(build))"
     }
@@ -1002,7 +1002,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         case "preview":
             let dest = output.isEmpty ? defaultDocumentsPath(ext: "jpg") : output
             return d.runHpStatus([
-                "scan", "--source", source, "--color", color,
+                "scan", "--source", "platen", "--color", color,
                 "--dpi", "100", "--format", "jpeg", "--output", dest,
             ])
         case "add-printer":
@@ -1195,7 +1195,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         preview.image = nil
         runHpAsync([
             "scan",
-            "--source", source,
+            "--source", "platen",
             "--color", color,
             "--dpi", "100",
             "--format", "jpeg",
@@ -1223,7 +1223,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         performScan(fullPage: false)
     }
 
+    func looksLikeDefaultScanPath(_ path: String) -> Bool {
+        let name = URL(fileURLWithPath: path).lastPathComponent
+        guard name.hasPrefix("scan-") else { return false }
+        let rest = name.dropFirst(5)
+        let digits = rest.prefix(while: { $0.isNumber })
+        return digits.count >= 9 && rest.dropFirst(digits.count).hasPrefix(".")
+    }
+
     func performScan(fullPage: Bool) {
+        let mapped = format == "jpeg" ? "jpg" : format
+        let current = outputField.stringValue.trimmingCharacters(in: .whitespaces)
+        if current.isEmpty || looksLikeDefaultScanPath(current) {
+            outputField.stringValue = Self.defaultDocumentsPath(ext: mapped)
+        }
         var args = [
             "scan",
             "--source", source,

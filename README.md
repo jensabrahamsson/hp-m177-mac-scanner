@@ -104,7 +104,7 @@ hp-m177-gui
 ```
 
 The window title is **HP Color LaserJet Pro MFP M177fw Scanner** version
-**0.2.0**. **Discover**, **Add Scanner**, **Preview**, **Scan All**, and
+**0.2.1**. **Discover**, **Add Scanner**, **Preview**, **Scan All**, and
 **Scan** sit along the top (drawn as window subviews; stock `NSButton` cells
 do not appear here). **Scan All** scans the whole page with no preview.
 **Scan** uses a crop rectangle if you dragged one after Preview. Source /
@@ -220,9 +220,11 @@ cargo test --locked
 
 The suite starts a protocol-accurate fake MFP (SOAP + DIME + WSD `/scanner`
 + eSCL caps), drives the library, launches the real CLI twice (JPEG platen
-color, then PDF ADF gray), and launches the real eSCL listener (including
-the `hp-m177-bridge` binary) twice. AppKit `--layout-check` and
-`--button-smoke` cover the native window chrome and button handlers.
+color, then PDF ADF gray), and launches GUI automation twice the same way
+(`hp-m177-gui` JPEG platen/color then PDF ADF/gray). It also launches the
+real eSCL listener (including the `hp-m177-bridge` binary) twice. AppKit
+`--layout-check` and `--button-smoke` cover the native window chrome and
+button handlers.
 
 ## More documentation
 

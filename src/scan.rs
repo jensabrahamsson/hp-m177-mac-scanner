@@ -5,7 +5,7 @@ use crate::error::{Error, Result};
 use crate::imagefmt;
 use crate::model::{
     DeviceRecord, JobProtocol, OutputFormat, ScanOutput, ScanRequest, ScanSource,
-    DEFAULT_WSD_PORT,
+    DEFAULT_SOAP_PORT, DEFAULT_WSD_PORT,
 };
 use crate::soap;
 use crate::transport::{HttpRequest, HttpResponse, Transport};
@@ -31,7 +31,6 @@ pub fn scan(
     match &device.job {
         JobProtocol::Soap { port } => match soap_scan(transport, &device.host, *port, req) {
             Ok(out) => Ok(out),
-            Err(Error::AdfEmpty) => Err(Error::AdfEmpty),
             Err(e) if should_fallback_to_wsd(&e) => wsd_after_soap(
                 transport,
                 &device.host,
@@ -41,7 +40,13 @@ pub fn scan(
             ),
             Err(e) => Err(e),
         },
-        JobProtocol::Escl { port } => escl_scan(transport, &device.host, *port, req),
+        JobProtocol::Escl { port } => match escl_scan(transport, &device.host, *port, req) {
+            Ok(out) => Ok(out),
+            Err(e) if should_fallback_from_escl(&e) => {
+                escl_then_soap_wsd(transport, &device.host, *port, req, e)
+            }
+            Err(e) => Err(e),
+        },
         JobProtocol::Wsd { port } => wsd_scan(transport, &device.host, *port, req),
     }
 }
@@ -62,9 +67,59 @@ fn should_fallback_to_wsd(e: &Error) -> bool {
                 || n.contains("retrieveimage")
                 || n.contains("fault")
                 || n.contains("http ")
+                || n.contains("404")
+                || n.contains("scanjobs")
         }
         _ => false,
     }
+}
+
+fn should_fallback_from_escl(e: &Error) -> bool {
+    if should_fallback_to_wsd(e) {
+        return true;
+    }
+    let n = e.to_string().to_ascii_lowercase();
+    n.contains("escl") || n.contains("404") || n.contains("scanjobs")
+}
+
+fn escl_then_soap_wsd(
+    transport: &dyn Transport,
+    host: &str,
+    escl_port: u16,
+    req: &ScanRequest,
+    escl_err: Error,
+) -> Result<ScanOutput> {
+    match soap_scan(transport, host, escl_port, req) {
+        Ok(out) => return Ok(out),
+        Err(e) if should_fallback_to_wsd(&e) => {
+            if let Ok(out) = wsd_after_soap(transport, host, escl_port, req, e) {
+                return Ok(out);
+            }
+        }
+        Err(_) => {}
+    }
+    if escl_port != DEFAULT_SOAP_PORT {
+        match soap_scan(transport, host, DEFAULT_SOAP_PORT, req) {
+            Ok(out) => return Ok(out),
+            Err(e) if should_fallback_to_wsd(&e) => {
+                return wsd_after_soap(transport, host, DEFAULT_SOAP_PORT, req, e).map_err(|w| {
+                    Error::msg(format!(
+                        "eSCL ScanJobs failed ({escl_err}); SOAP/WSD failed ({w})"
+                    ))
+                });
+            }
+            Err(e) => {
+                return Err(Error::msg(format!(
+                    "eSCL ScanJobs failed ({escl_err}); SOAP failed ({e})"
+                )));
+            }
+        }
+    }
+    wsd_scan(transport, host, DEFAULT_WSD_PORT, req).map_err(|w| {
+        Error::msg(format!(
+            "eSCL ScanJobs failed ({escl_err}); SOAP/WSD failed ({w})"
+        ))
+    })
 }
 
 fn wsd_after_soap(
@@ -76,10 +131,17 @@ fn wsd_after_soap(
 ) -> Result<ScanOutput> {
     match wsd_scan(transport, host, soap_port, req) {
         Ok(out) => Ok(out),
-        Err(_) => wsd_scan(transport, host, DEFAULT_WSD_PORT, req).map_err(|w| {
-            Error::msg(format!(
-                "SOAP on :{soap_port} failed ({soap_err}); WSD failed ({w})"
-            ))
+        Err(w) => wsd_scan(transport, host, DEFAULT_WSD_PORT, req).map_err(|w2| {
+            let soap_s = soap_err.to_string().to_ascii_lowercase();
+            if req.source == ScanSource::Adf
+                && (soap_s.contains("no image") || soap_s.contains("retrieveimage"))
+            {
+                Error::AdfEmpty
+            } else {
+                Error::msg(format!(
+                    "SOAP on :{soap_port} failed ({soap_err}); WSD failed ({w}; {w2})"
+                ))
+            }
         }),
     }
 }
@@ -124,9 +186,8 @@ fn soap_scan(
         }
     }
     if pages.is_empty() {
-        if req.source == ScanSource::Adf {
-            return Err(Error::AdfEmpty);
-        }
+        // Eligible for WSD fallback (including ADF). AdfEmpty is only
+        // returned after WSD also produced no pixels.
         return Err(Error::protocol("RetrieveImage returned no image data"));
     }
     let _ = cancel_job(transport, &url, &created.job_id);
@@ -136,10 +197,15 @@ fn soap_scan(
 fn wait_until_idle(transport: &dyn Transport, host: &str, port: u16) {
     let deadline = Instant::now() + Duration::from_secs(6);
     loop {
-        if let Ok(caps) = fetch_caps(transport, host, port) {
-            if caps.state.eq_ignore_ascii_case("idle") {
-                return;
-            }
+        let remain = deadline.saturating_duration_since(Instant::now());
+        if remain.is_zero() {
+            return;
+        }
+        let t = remain.min(SOAP_FAST_TIMEOUT);
+        match fetch_caps_timeout(transport, host, port, t) {
+            Ok(caps) if caps.state.eq_ignore_ascii_case("idle") => return,
+            Err(Error::Transport { .. }) | Err(Error::Timeout(_)) => return,
+            _ => {}
         }
         if Instant::now() >= deadline {
             return;
@@ -339,7 +405,7 @@ fn finalize(pages: Vec<Vec<u8>>, req: &ScanRequest) -> Result<ScanOutput> {
             if imagefmt::is_pdf(&first) {
                 first
             } else {
-                imagefmt::jpeg_to_pdf(&first)?
+                imagefmt::jpeg_to_pdf_at_dpi(&first, req.dpi.max(1))?
             }
         }
         OutputFormat::Tiff => {
@@ -373,7 +439,14 @@ fn escl_scan(
     let base = format!("http://{host}:{port}/eSCL");
     let body = crate::escl::scan_settings_xml(req);
     let resp = transport
-        .post(&format!("{base}/ScanJobs"), body.as_bytes(), "text/xml")
+        .execute(
+            HttpRequest::post(
+                format!("{base}/ScanJobs"),
+                body.into_bytes(),
+                "text/xml",
+            )
+            .with_timeout(SOAP_FAST_TIMEOUT),
+        )
         .or_else(|e| match e {
             Error::Http { status, detail, .. } => Err(Error::protocol(format!(
                 "eSCL ScanJobs failed ({status}): {detail}"
@@ -391,7 +464,7 @@ fn escl_scan(
     };
     let mut last_err = None;
     for _ in 0..40 {
-        match transport.get(&doc_url) {
+        match transport.execute(HttpRequest::get(&doc_url).with_timeout(SOAP_FAST_TIMEOUT)) {
             Ok(r) if r.is_success() && !r.body.is_empty() => {
                 return finalize(vec![r.body], req);
             }
@@ -414,17 +487,23 @@ fn fetch_caps(
     host: &str,
     port: u16,
 ) -> Result<crate::model::SoapCapabilities> {
+    fetch_caps_timeout(transport, host, port, SOAP_FAST_TIMEOUT)
+}
+
+fn fetch_caps_timeout(
+    transport: &dyn Transport,
+    host: &str,
+    port: u16,
+    timeout: Duration,
+) -> Result<crate::model::SoapCapabilities> {
     let url = format!("http://{host}:{port}/");
-    let body = post_xml(
+    let body = post_xml_timeout(
         transport,
         &url,
         soap::get_scanner_elements_xml().as_bytes(),
+        timeout,
     )?;
     soap::parse_capabilities(&body)
-}
-
-fn post_xml(transport: &dyn Transport, url: &str, body: &[u8]) -> Result<String> {
-    post_xml_timeout(transport, url, body, Duration::from_secs(60))
 }
 
 fn post_xml_timeout(
@@ -512,4 +591,64 @@ pub fn write_output(output: &ScanOutput, dest: &std::path::Path) -> Result<std::
         detail: e.to_string(),
     })?;
     Ok(dest.to_path_buf())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::fake::{FakeDevice, FakeOptions};
+    use crate::model::{ColorMode, DeviceRecord, OutputFormat};
+    use crate::transport::UreqTransport;
+
+    #[test]
+    fn job_timeouts_match_short_policy() {
+        assert_eq!(SOAP_FAST_TIMEOUT, Duration::from_secs(8));
+        assert_eq!(SOAP_JOBINFO_TIMEOUT, Duration::from_secs(4));
+        assert_eq!(SOAP_JOBINFO_DEADLINE, Duration::from_secs(20));
+        assert_eq!(SOAP_RETRIEVE_TIMEOUT, Duration::from_secs(20));
+        assert_eq!(WSD_CREATE_TIMEOUT, Duration::from_secs(8));
+        assert!(WSD_RETRIEVE_TIMEOUT <= Duration::from_secs(90));
+    }
+
+    #[test]
+    fn soap_adf_two_pages_finalize_keeps_one_jpeg() {
+        let fake = FakeDevice::start_with(FakeOptions {
+            adf_pages: 2,
+            paper_in_adf: true,
+            ..FakeOptions::default()
+        })
+        .unwrap();
+        let rec = DeviceRecord {
+            id: "adf2".into(),
+            name: "M177fw".into(),
+            host: fake.host(),
+            job: JobProtocol::Soap { port: fake.port() },
+            has_escl_caps: true,
+            has_platen: true,
+            has_adf: true,
+            uuid: None,
+        };
+        let t = UreqTransport::default();
+        let req = ScanRequest {
+            source: ScanSource::Adf,
+            color: ColorMode::Color,
+            dpi: 300,
+            format: OutputFormat::Jpeg,
+            output: None,
+            region: None,
+        };
+        let out = scan(&t, &rec, &req).expect("ADF two-page SOAP");
+        assert!(imagefmt::is_jpeg(&out.bytes));
+        let sois = out
+            .bytes
+            .windows(2)
+            .filter(|w| *w == [0xff, 0xd8])
+            .count();
+        assert_eq!(sois, 1, "finalize must keep only the first page");
+        let retrieves = fake.retrieve_count();
+        assert!(
+            retrieves >= 2,
+            "SOAP must retrieve more than one ADF page before dropping extras: {retrieves}"
+        );
+    }
 }

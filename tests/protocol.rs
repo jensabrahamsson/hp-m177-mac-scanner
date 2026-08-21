@@ -505,3 +505,258 @@ fn live_get_job_info_fixture_parses() {
     let info = hp_m177::soap::parse_job_info(xml).unwrap();
     assert!(info.image_ready() || info.finished() || !info.job_id.is_empty());
 }
+
+#[test]
+fn hung_soap_get_scanner_elements_does_not_burn_60s() {
+    use hp_m177::model::{ColorMode, DeviceRecord, JobProtocol, OutputFormat, ScanSource};
+    use std::net::TcpListener;
+    use std::thread;
+    use std::time::{Duration, Instant};
+
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    thread::spawn(move || {
+        if let Ok((stream, _)) = listener.accept() {
+            thread::sleep(Duration::from_secs(120));
+            drop(stream);
+        }
+    });
+    thread::sleep(Duration::from_millis(30));
+    let rec = DeviceRecord {
+        id: "hang".into(),
+        name: "M177fw".into(),
+        host: "127.0.0.1".into(),
+        job: JobProtocol::Soap { port },
+        has_escl_caps: false,
+        has_platen: true,
+        has_adf: true,
+        uuid: None,
+    };
+    let t = UreqTransport::default();
+    let req = ScanRequest {
+        source: ScanSource::Platen,
+        color: ColorMode::Color,
+        dpi: 300,
+        format: OutputFormat::Jpeg,
+        output: None,
+        region: None,
+    };
+    let started = Instant::now();
+    let _ = scan(&t, &rec, &req);
+    let elapsed = started.elapsed();
+    assert!(
+        elapsed.as_secs() < 40,
+        "pre-job SOAP caps must use the 8s job bound, not 60s HTTP default (took {elapsed:?})"
+    );
+}
+
+#[test]
+fn escl_scanjobs_404_still_returns_pixels_via_soap() {
+    use hp_m177::model::{ColorMode, DeviceRecord, JobProtocol, OutputFormat, ScanSource};
+    let fake = FakeDevice::start().unwrap();
+    let rec = DeviceRecord {
+        id: "escl404".into(),
+        name: "M177fw".into(),
+        host: fake.host(),
+        job: JobProtocol::Escl { port: fake.port() },
+        has_escl_caps: true,
+        has_platen: true,
+        has_adf: true,
+        uuid: None,
+    };
+    let t = UreqTransport::default();
+    let req = ScanRequest {
+        source: ScanSource::Platen,
+        color: ColorMode::Color,
+        dpi: 300,
+        format: OutputFormat::Jpeg,
+        output: None,
+        region: None,
+    };
+    let out = scan(&t, &rec, &req).expect("eSCL 404 then SOAP");
+    assert!(imagefmt::is_jpeg(&out.bytes));
+    assert!(
+        fake.last_create_job_xml().contains("CreateScanJob"),
+        "SOAP CreateScanJob after native ScanJobs 404"
+    );
+}
+
+#[test]
+fn adf_soap_empty_retrieve_still_tries_wsd() {
+    use hp_m177::fake::FakeOptions;
+    use hp_m177::model::{ColorMode, DeviceRecord, JobProtocol, OutputFormat, ScanSource};
+    let fake = FakeDevice::start_with(FakeOptions {
+        retrieve_empty: true,
+        ..FakeOptions::default()
+    })
+    .unwrap();
+    let rec = DeviceRecord {
+        id: "adf-empty".into(),
+        name: "M177fw".into(),
+        host: fake.host(),
+        job: JobProtocol::Soap { port: fake.port() },
+        has_escl_caps: true,
+        has_platen: true,
+        has_adf: true,
+        uuid: None,
+    };
+    let t = UreqTransport::default();
+    let req = ScanRequest {
+        source: ScanSource::Adf,
+        color: ColorMode::Color,
+        dpi: 300,
+        format: OutputFormat::Jpeg,
+        output: None,
+        region: None,
+    };
+    let out = scan(&t, &rec, &req);
+    assert!(
+        !fake.last_wsd_create_xml().is_empty(),
+        "ADF empty SOAP retrieve must POST WSD CreateScanJob, xml={:?}",
+        fake.last_wsd_create_xml()
+    );
+    assert!(
+        out.is_ok() || matches!(out, Err(hp_m177::Error::AdfEmpty)),
+        "after WSD attempt: {:?}",
+        out.err()
+    );
+    if let Ok(scanned) = out {
+        assert!(imagefmt::is_jpeg(&scanned.bytes));
+    }
+}
+
+#[test]
+fn shipped_converters_bitfields_gray_tiff_pdf_dpi_and_dime_cf() {
+    let bmp = imagefmt::bitfields_bgra_bmp(2, 2, 0, 0, 255);
+    let (w, h, rgb) = imagefmt::decode_bmp_or_dib(&bmp).unwrap();
+    assert_eq!((w, h), (2, 2));
+    assert_eq!(&rgb[0..3], &[255, 0, 0]);
+
+    let gray = vec![10u8, 20, 30, 40];
+    let gj = imagefmt::gray_to_jpeg(&gray, 2, 2, 80).unwrap();
+    let tiff = imagefmt::jpeg_to_tiff(&gj, 300).unwrap();
+    assert!(imagefmt::is_tiff(&tiff));
+    let n = u16::from_le_bytes(tiff[8..10].try_into().unwrap()) as usize;
+    let mut photo = 0u32;
+    let mut spp = 0u32;
+    for i in 0..n {
+        let o = 10 + i * 12;
+        let tag = u16::from_le_bytes(tiff[o..o + 2].try_into().unwrap());
+        let val = u32::from_le_bytes(tiff[o + 8..o + 12].try_into().unwrap());
+        if tag == 262 {
+            photo = val;
+        }
+        if tag == 277 {
+            spp = val;
+        }
+    }
+    assert_eq!(photo, 1);
+    assert_eq!(spp, 1);
+
+    let color_jpeg = imagefmt::rgb_to_jpeg(&[255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0], 2, 2, 80)
+        .unwrap();
+    let pdf = imagefmt::jpeg_to_pdf_at_dpi(&color_jpeg, 300).unwrap();
+    let text = String::from_utf8_lossy(&pdf);
+    assert!(
+        text.contains("0.48"),
+        "300dpi 2px MediaBox should be 0.48pt: {text}"
+    );
+
+    let chunked = include_bytes!("../fixtures/dime-jpeg-chunked.bin");
+    let jpeg = hp_m177::dime::extract_image(chunked).unwrap();
+    assert_eq!(&jpeg[..2], &[0xff, 0xd8]);
+    assert_eq!(&jpeg[jpeg.len() - 2..], &[0xff, 0xd9]);
+}
+
+fn soap_rec(fake: &FakeDevice, id: &str) -> DeviceRecord {
+    use hp_m177::model::JobProtocol;
+    DeviceRecord {
+        id: id.into(),
+        name: "M177fw".into(),
+        host: fake.host(),
+        job: JobProtocol::Soap { port: fake.port() },
+        has_escl_caps: true,
+        has_platen: true,
+        has_adf: true,
+        uuid: None,
+    }
+}
+
+fn platen_jpeg() -> ScanRequest {
+    ScanRequest {
+        source: ScanSource::Platen,
+        color: ColorMode::Color,
+        dpi: 300,
+        format: OutputFormat::Jpeg,
+        output: None,
+        region: None,
+    }
+}
+
+#[test]
+fn hung_get_job_info_is_bounded() {
+    use hp_m177::fake::FakeOptions;
+    let fake = FakeDevice::start_with(FakeOptions {
+        hang_get_job_info: true,
+        ..FakeOptions::default()
+    })
+    .unwrap();
+    let t = UreqTransport::default();
+    let started = std::time::Instant::now();
+    let out = scan(&t, &soap_rec(&fake, "hang-info"), &platen_jpeg());
+    let elapsed = started.elapsed();
+    assert!(
+        elapsed.as_secs() < 20,
+        "hung GetJobInfo must use 4s poll timeout, took {elapsed:?}"
+    );
+    assert!(imagefmt::is_jpeg(&out.expect("WSD fallback").bytes));
+}
+
+#[test]
+fn hung_retrieve_image_is_bounded() {
+    use hp_m177::fake::FakeOptions;
+    let fake = FakeDevice::start_with(FakeOptions {
+        hang_retrieve: true,
+        ..FakeOptions::default()
+    })
+    .unwrap();
+    let t = UreqTransport::default();
+    let started = std::time::Instant::now();
+    let out = scan(&t, &soap_rec(&fake, "hang-retr"), &platen_jpeg());
+    let elapsed = started.elapsed();
+    assert!(
+        elapsed.as_secs() < 35,
+        "hung SOAP RetrieveImage must use 20s timeout, took {elapsed:?}"
+    );
+    assert!(imagefmt::is_jpeg(&out.expect("WSD fallback").bytes));
+}
+
+#[test]
+fn hung_wsd_retrieve_is_bounded() {
+    use hp_m177::fake::FakeOptions;
+    use hp_m177::model::JobProtocol;
+    let fake = FakeDevice::start_with(FakeOptions {
+        hang_wsd_retrieve: true,
+        ..FakeOptions::default()
+    })
+    .unwrap();
+    let rec = DeviceRecord {
+        id: "hang-wsd".into(),
+        name: "M177fw".into(),
+        host: fake.host(),
+        job: JobProtocol::Wsd { port: fake.port() },
+        has_escl_caps: true,
+        has_platen: true,
+        has_adf: true,
+        uuid: None,
+    };
+    let t = UreqTransport::default();
+    let started = std::time::Instant::now();
+    let out = scan(&t, &rec, &platen_jpeg());
+    let elapsed = started.elapsed();
+    assert!(
+        elapsed.as_secs() < 100,
+        "hung WSD RetrieveImage must use the 90s retrieve bound, took {elapsed:?}"
+    );
+    assert!(out.is_err(), "silent WSD retrieve should not yield pixels");
+}

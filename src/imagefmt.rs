@@ -106,14 +106,19 @@ pub fn jpeg_comment(bytes: &[u8]) -> Option<String> {
 }
 
 /// Wrap a JPEG in a one-page PDF using `/Filter /DCTDecode`.
+/// Physical page size is `pixels / dpi` inches, expressed in 72-dpi points.
 pub fn jpeg_to_pdf(jpeg: &[u8]) -> Result<Vec<u8>> {
+    jpeg_to_pdf_at_dpi(jpeg, 72)
+}
+
+pub fn jpeg_to_pdf_at_dpi(jpeg: &[u8], dpi: u32) -> Result<Vec<u8>> {
     if !is_jpeg(jpeg) {
         return Err(Error::protocol("cannot wrap non-JPEG bytes as PDF"));
     }
     let (w, h) = jpeg_dimensions(jpeg).unwrap_or((8, 8));
-    // PDF user space is 72 dpi; we do not need a physical size for validity.
-    let pw = w as f64;
-    let ph = h as f64;
+    let d = dpi.max(1) as f64;
+    let pw = w as f64 / d * 72.0;
+    let ph = h as f64 / d * 72.0;
     let content = format!("q {pw:.2} 0 0 {ph:.2} 0 0 cm /Im0 Do Q\n");
     let mut pdf = Vec::new();
     let mut offsets = Vec::new();
@@ -264,16 +269,63 @@ fn parse_dib(info: &[u8], file: &[u8], pixel_off: usize) -> Result<(u32, u32, Ve
     if width <= 0 || planes != 1 {
         return Err(Error::protocol("unsupported BMP geometry"));
     }
-    if compression != 0 {
+    // BI_RGB (0) and BI_BITFIELDS (3, color masks, not a codec).
+    if compression != 0 && compression != 3 {
         return Err(Error::protocol("compressed BMP is not supported"));
     }
+    let header_size = u32::from_le_bytes(info[0..4].try_into().unwrap()) as usize;
+    let colors_used = u32::from_le_bytes(info[32..36].try_into().unwrap()) as usize;
+    let mask_bytes = if compression == 3 && header_size == 40 {
+        12
+    } else {
+        0
+    };
+    let pal_entries = if bits <= 8 {
+        if colors_used == 0 {
+            1usize << bits
+        } else {
+            colors_used
+        }
+    } else {
+        0
+    };
+    let dib_origin = if file.len() > info.len() {
+        file.len() - info.len()
+    } else {
+        0
+    };
+    let computed_off = dib_origin + header_size + mask_bytes + pal_entries * 4;
+    let pix_off = if pixel_off >= computed_off {
+        pixel_off
+    } else {
+        computed_off
+    };
+    let palette: Vec<[u8; 3]> = if pal_entries > 0 {
+        let pal_start = header_size + mask_bytes;
+        (0..pal_entries)
+            .map(|i| {
+                let o = pal_start + i * 4;
+                let b = *info.get(o).unwrap_or(&0);
+                let g = *info.get(o + 1).unwrap_or(&0);
+                let r = *info.get(o + 2).unwrap_or(&0);
+                [r, g, b]
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
+    let (red_mask, green_mask, blue_mask) = if compression == 3 && bits == 32 {
+        read_bitfields_masks(info, header_size)
+    } else {
+        (0x00ff_0000, 0x0000_ff00, 0x0000_00ff)
+    };
     let top_down = height_raw < 0;
     let height = height_raw.unsigned_abs();
     let w = width as u32;
     let h = height;
     let row_bytes = ((w as usize * bits as usize + 31) / 32) * 4;
     let pixels = file
-        .get(pixel_off..)
+        .get(pix_off..)
         .ok_or_else(|| Error::protocol("BMP pixel offset past end of buffer"))?;
     let mut rgb = vec![0u8; w as usize * h as usize * 3];
     for y in 0..h as usize {
@@ -287,9 +339,10 @@ fn parse_dib(info: &[u8], file: &[u8], pixel_off: usize) -> Result<(u32, u32, Ve
             match bits {
                 32 => {
                     let i = x * 4;
-                    rgb[dst] = row[i + 2];
-                    rgb[dst + 1] = row[i + 1];
-                    rgb[dst + 2] = row[i];
+                    let pix = u32::from_le_bytes(row[i..i + 4].try_into().unwrap());
+                    rgb[dst] = extract_mask(pix, red_mask);
+                    rgb[dst + 1] = extract_mask(pix, green_mask);
+                    rgb[dst + 2] = extract_mask(pix, blue_mask);
                 }
                 24 => {
                     let i = x * 3;
@@ -298,10 +351,14 @@ fn parse_dib(info: &[u8], file: &[u8], pixel_off: usize) -> Result<(u32, u32, Ve
                     rgb[dst + 2] = row[i];
                 }
                 8 => {
-                    let v = row[x];
-                    rgb[dst] = v;
-                    rgb[dst + 1] = v;
-                    rgb[dst + 2] = v;
+                    let idx = row[x] as usize;
+                    let [r, g, b] = palette
+                        .get(idx)
+                        .copied()
+                        .unwrap_or([idx as u8, idx as u8, idx as u8]);
+                    rgb[dst] = r;
+                    rgb[dst + 1] = g;
+                    rgb[dst + 2] = b;
                 }
                 _ => {
                     return Err(Error::protocol(format!(
@@ -312,6 +369,32 @@ fn parse_dib(info: &[u8], file: &[u8], pixel_off: usize) -> Result<(u32, u32, Ve
         }
     }
     Ok((w, h, rgb))
+}
+
+fn read_bitfields_masks(info: &[u8], header_size: usize) -> (u32, u32, u32) {
+    let off = if header_size >= 56 { 40 } else { header_size };
+    if off + 12 <= info.len() {
+        let r = u32::from_le_bytes(info[off..off + 4].try_into().unwrap());
+        let g = u32::from_le_bytes(info[off + 4..off + 8].try_into().unwrap());
+        let b = u32::from_le_bytes(info[off + 8..off + 12].try_into().unwrap());
+        (r, g, b)
+    } else {
+        (0x00ff_0000, 0x0000_ff00, 0x0000_00ff)
+    }
+}
+
+fn extract_mask(pix: u32, mask: u32) -> u8 {
+    if mask == 0 {
+        return 0;
+    }
+    let shift = mask.trailing_zeros();
+    let bits = (mask >> shift).count_ones();
+    let raw = (pix & mask) >> shift;
+    if bits >= 8 {
+        (raw >> (bits - 8)) as u8
+    } else {
+        ((raw * 255) / ((1u32 << bits) - 1).max(1)) as u8
+    }
 }
 
 pub fn jpeg_to_rgb(jpeg: &[u8]) -> Result<(u32, u32, Vec<u8>)> {
@@ -404,9 +487,111 @@ pub fn rgb_to_tiff(rgb: &[u8], width: u32, height: u32, dpi: u32) -> Result<Vec<
     Ok(t)
 }
 
+pub fn gray_to_tiff(gray: &[u8], width: u32, height: u32, dpi: u32) -> Result<Vec<u8>> {
+    if width == 0 || height == 0 {
+        return Err(Error::protocol("TIFF dimensions out of range"));
+    }
+    let expected = width as usize * height as usize;
+    if gray.len() < expected {
+        return Err(Error::protocol("gray buffer shorter than width×height"));
+    }
+    let strip = &gray[..expected];
+    let mut t = Vec::new();
+    t.extend_from_slice(b"II*\0");
+    let ifd_at = 8u32;
+    t.extend_from_slice(&ifd_at.to_le_bytes());
+    t.extend_from_slice(&12u16.to_le_bytes());
+    let res_at = 8 + 2 + 12 * 12 + 4;
+    let data_at = res_at + 16;
+    fn entry(tag: u16, ty: u16, count: u32, value: u32) -> Vec<u8> {
+        let mut e = Vec::with_capacity(12);
+        e.extend_from_slice(&tag.to_le_bytes());
+        e.extend_from_slice(&ty.to_le_bytes());
+        e.extend_from_slice(&count.to_le_bytes());
+        e.extend_from_slice(&value.to_le_bytes());
+        e
+    }
+    t.extend_from_slice(&entry(256, 4, 1, width));
+    t.extend_from_slice(&entry(257, 4, 1, height));
+    t.extend_from_slice(&entry(258, 3, 1, 8));
+    t.extend_from_slice(&entry(259, 3, 1, 1));
+    t.extend_from_slice(&entry(262, 3, 1, 1)); // BlackIsZero
+    t.extend_from_slice(&entry(273, 4, 1, data_at));
+    t.extend_from_slice(&entry(277, 3, 1, 1));
+    t.extend_from_slice(&entry(278, 4, 1, height));
+    t.extend_from_slice(&entry(279, 4, 1, strip.len() as u32));
+    t.extend_from_slice(&entry(282, 5, 1, res_at));
+    t.extend_from_slice(&entry(283, 5, 1, res_at + 8));
+    t.extend_from_slice(&entry(296, 3, 1, 2));
+    t.extend_from_slice(&0u32.to_le_bytes());
+    let d = dpi.max(1);
+    t.extend_from_slice(&d.to_le_bytes());
+    t.extend_from_slice(&1u32.to_le_bytes());
+    t.extend_from_slice(&d.to_le_bytes());
+    t.extend_from_slice(&1u32.to_le_bytes());
+    t.extend_from_slice(strip);
+    Ok(t)
+}
+
+pub fn gray_to_jpeg(gray: &[u8], width: u32, height: u32, quality: u8) -> Result<Vec<u8>> {
+    if width == 0 || height == 0 || width > u16::MAX as u32 || height > u16::MAX as u32 {
+        return Err(Error::protocol("JPEG dimensions out of range"));
+    }
+    let expected = width as usize * height as usize;
+    if gray.len() < expected {
+        return Err(Error::protocol("gray buffer shorter than width×height"));
+    }
+    let mut out = Vec::new();
+    let encoder = jpeg_encoder::Encoder::new(&mut out, quality);
+    encoder
+        .encode(
+            &gray[..expected],
+            width as u16,
+            height as u16,
+            jpeg_encoder::ColorType::Luma,
+        )
+        .map_err(|e| Error::protocol(format!("jpeg encode: {e}")))?;
+    Ok(out)
+}
+
 pub fn jpeg_to_tiff(jpeg: &[u8], dpi: u32) -> Result<Vec<u8>> {
     let (w, h, rgb) = jpeg_to_rgb(jpeg)?;
-    rgb_to_tiff(&rgb, w, h, dpi)
+    if jpeg_is_gray(jpeg) {
+        let gray: Vec<u8> = rgb.chunks_exact(3).map(|p| p[0]).collect();
+        gray_to_tiff(&gray, w, h, dpi)
+    } else {
+        rgb_to_tiff(&rgb, w, h, dpi)
+    }
+}
+
+pub fn bitfields_bgra_bmp(width: u32, height: u32, b: u8, g: u8, r: u8) -> Vec<u8> {
+    let row = width as usize * 4;
+    let pixel_bytes = row * height as usize;
+    let off_bits = 14u32 + 40 + 12;
+    let file_size = off_bits + pixel_bytes as u32;
+    let mut out = Vec::with_capacity(file_size as usize);
+    out.extend_from_slice(b"BM");
+    out.extend_from_slice(&file_size.to_le_bytes());
+    out.extend_from_slice(&[0, 0, 0, 0]);
+    out.extend_from_slice(&off_bits.to_le_bytes());
+    out.extend_from_slice(&40u32.to_le_bytes());
+    out.extend_from_slice(&(width as i32).to_le_bytes());
+    out.extend_from_slice(&(-(height as i32)).to_le_bytes());
+    out.extend_from_slice(&1u16.to_le_bytes());
+    out.extend_from_slice(&32u16.to_le_bytes());
+    out.extend_from_slice(&3u32.to_le_bytes()); // BI_BITFIELDS
+    out.extend_from_slice(&(pixel_bytes as u32).to_le_bytes());
+    out.extend_from_slice(&11811u32.to_le_bytes());
+    out.extend_from_slice(&11811u32.to_le_bytes());
+    out.extend_from_slice(&0u32.to_le_bytes());
+    out.extend_from_slice(&0u32.to_le_bytes());
+    out.extend_from_slice(&0x00ff_0000u32.to_le_bytes());
+    out.extend_from_slice(&0x0000_ff00u32.to_le_bytes());
+    out.extend_from_slice(&0x0000_00ffu32.to_le_bytes());
+    for _ in 0..height as usize * width as usize {
+        out.extend_from_slice(&[b, g, r, 0]);
+    }
+    out
 }
 
 pub fn apply_lineart_jpeg(jpeg: &[u8]) -> Result<Vec<u8>> {
@@ -464,5 +649,63 @@ mod tests {
         assert!(is_jpeg(&jpeg));
         let tiff = rgb_to_tiff(&rgb, w, h, 300).unwrap();
         assert!(is_tiff(&tiff));
+    }
+
+    #[test]
+    fn bitfields_bmp_decodes_as_uncompressed_rgb() {
+        let bmp = bitfields_bgra_bmp(2, 2, 0, 0, 255);
+        assert_eq!(u32::from_le_bytes(bmp[30..34].try_into().unwrap()), 3);
+        let (w, h, rgb) = decode_bmp_or_dib(&bmp).unwrap();
+        assert_eq!((w, h), (2, 2));
+        assert_eq!(&rgb[0..3], &[255, 0, 0]);
+    }
+
+    #[test]
+    fn gray_jpeg_becomes_photometric_gray_tiff() {
+        let gray = vec![40u8, 80, 160, 200];
+        let jpeg = gray_to_jpeg(&gray, 2, 2, 80).unwrap();
+        assert!(is_jpeg(&jpeg));
+        assert!(jpeg_is_gray(&jpeg));
+        let tiff = jpeg_to_tiff(&jpeg, 300).unwrap();
+        assert!(is_tiff(&tiff));
+        // IFD starts at 8; 12 entries of 12 bytes. Tag 262 photometric at some entry.
+        let mut photometric = None;
+        let mut samples = None;
+        let n = u16::from_le_bytes(tiff[8..10].try_into().unwrap()) as usize;
+        for i in 0..n {
+            let o = 10 + i * 12;
+            let tag = u16::from_le_bytes(tiff[o..o + 2].try_into().unwrap());
+            let val = u32::from_le_bytes(tiff[o + 8..o + 12].try_into().unwrap());
+            if tag == 262 {
+                photometric = Some(val);
+            }
+            if tag == 277 {
+                samples = Some(val);
+            }
+        }
+        assert_eq!(photometric, Some(1), "BlackIsZero gray, not RGB=2");
+        assert_eq!(samples, Some(1), "one sample per pixel");
+    }
+
+    #[test]
+    fn pdf_mediabox_uses_scan_dpi_not_raw_pixels() {
+        let jpeg = rgb_to_jpeg(&[255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 0], 2, 2, 80).unwrap();
+        let pdf = jpeg_to_pdf_at_dpi(&jpeg, 300).unwrap();
+        let text = String::from_utf8_lossy(&pdf);
+        // 2px / 300dpi * 72 = 0.48 points
+        assert!(
+            text.contains("MediaBox [0 0 0.48 0.48]"),
+            "MediaBox must be pixels/dpi×72, got {text}"
+        );
+    }
+
+    #[test]
+    fn live_wsd_mtom_bmp_decodes_without_pixel_dumps() {
+        let raw = include_bytes!("../fixtures/live/wsd-RetrieveImage.mtom");
+        let bmp = crate::wsd::extract_image(raw).expect("live WSD MTOM");
+        assert!(is_bmp(&bmp) || is_dib(&bmp));
+        let (w, h, rgb) = decode_bmp_or_dib(&bmp).expect("shipped BMP decoder");
+        assert!(w > 0 && h > 0, "live WSD BMP {w}x{h}");
+        assert_eq!(rgb.len(), w as usize * h as usize * 3);
     }
 }

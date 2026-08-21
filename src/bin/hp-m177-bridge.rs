@@ -30,6 +30,7 @@ fn main() {
             std::process::exit(1);
         }
     };
+    facade.refresh_adf_from_device();
     println!(
         "eSCL listening on {}/eSCL/ScannerCapabilities",
         facade.url()

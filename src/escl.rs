@@ -123,6 +123,43 @@ pub fn status_xml(adf_empty: bool, jobs: &[(String, &str)]) -> String {
     )
 }
 
+/// PWG eSCL region units are 1/300 inch; SOAP tickets use 1/1000 inch.
+pub fn pwg_300ths_to_thousandths(v: u32) -> u32 {
+    v.saturating_mul(10) / 3
+}
+
+fn parse_region(xml: &str) -> Option<crate::model::ScanRegion> {
+    let soap_x = first_text(xml, "ScanRegionXOffset").and_then(|s| s.parse().ok());
+    let soap_y = first_text(xml, "ScanRegionYOffset").and_then(|s| s.parse().ok());
+    let soap_w = first_text(xml, "ScanRegionWidth").and_then(|s| s.parse().ok());
+    let soap_h = first_text(xml, "ScanRegionHeight").and_then(|s| s.parse().ok());
+    if let (Some(x), Some(y), Some(width), Some(height)) = (soap_x, soap_y, soap_w, soap_h) {
+        if width > 0 && height > 0 {
+            return Some(crate::model::ScanRegion {
+                x,
+                y,
+                width,
+                height,
+            });
+        }
+    }
+    let x = first_text(xml, "XOffset").and_then(|s| s.parse().ok());
+    let y = first_text(xml, "YOffset").and_then(|s| s.parse().ok());
+    let w = first_text(xml, "Width").and_then(|s| s.parse().ok());
+    let h = first_text(xml, "Height").and_then(|s| s.parse().ok());
+    match (x, y, w, h) {
+        (Some(x), Some(y), Some(width), Some(height)) if width > 0 && height > 0 => {
+            Some(crate::model::ScanRegion {
+                x: pwg_300ths_to_thousandths(x),
+                y: pwg_300ths_to_thousandths(y),
+                width: pwg_300ths_to_thousandths(width),
+                height: pwg_300ths_to_thousandths(height),
+            })
+        }
+        _ => None,
+    }
+}
+
 pub fn parse_scan_settings(xml: &str) -> Result<ScanRequest> {
     let source_raw = first_text(xml, "InputSource").unwrap_or_else(|| "Platen".into());
     let source = if source_raw.eq_ignore_ascii_case("feeder")
@@ -163,23 +200,7 @@ pub fn parse_scan_settings(xml: &str) -> Result<ScanRequest> {
         dpi,
         format,
         output: None,
-        region: {
-            let x = first_text(xml, "ScanRegionXOffset").and_then(|s| s.parse().ok());
-            let y = first_text(xml, "ScanRegionYOffset").and_then(|s| s.parse().ok());
-            let w = first_text(xml, "ScanRegionWidth").and_then(|s| s.parse().ok());
-            let h = first_text(xml, "ScanRegionHeight").and_then(|s| s.parse().ok());
-            match (x, y, w, h) {
-                (Some(x), Some(y), Some(width), Some(height)) if width > 0 && height > 0 => {
-                    Some(crate::model::ScanRegion {
-                        x,
-                        y,
-                        width,
-                        height,
-                    })
-                }
-                _ => None,
-            }
-        },
+        region: parse_region(xml),
     })
 }
 
@@ -280,6 +301,20 @@ mod tests {
         });
         let again = parse_scan_settings(&scan_settings_xml(&cropped)).unwrap();
         assert_eq!(again.region.unwrap().width, 3000);
+        let pwg = r#"<?xml version="1.0"?>
+<scan:ScanSettings xmlns:scan="http://schemas.hp.com/imaging/escl/2011/05/03" xmlns:pwg="http://www.pwg.org/schemas/2010/12/sm">
+  <pwg:InputSource>Platen</pwg:InputSource>
+  <pwg:ScanRegion>
+    <pwg:XOffset>30</pwg:XOffset>
+    <pwg:YOffset>60</pwg:YOffset>
+    <pwg:Width>2550</pwg:Width>
+    <pwg:Height>3300</pwg:Height>
+  </pwg:ScanRegion>
+</scan:ScanSettings>"#;
+        let mapped = parse_scan_settings(pwg).unwrap().region.unwrap();
+        assert_eq!(mapped.x, pwg_300ths_to_thousandths(30));
+        assert_eq!(mapped.width, 8500);
+        assert_eq!(mapped.height, 11000);
     }
 
     #[test]

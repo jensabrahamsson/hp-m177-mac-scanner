@@ -25,6 +25,7 @@ pub struct FakeState {
     pub adf_pages_remaining: u32,
     pub paper_in_adf: bool,
     pub busy_creates_seen: u32,
+    pub retrieve_count: u32,
 }
 
 #[derive(Clone)]
@@ -80,6 +81,14 @@ impl FakeDevice {
     pub fn request_log(&self) -> Vec<String> {
         self.state.lock().unwrap().requests.clone()
     }
+
+    pub fn set_paper_in_adf(&self, loaded: bool) {
+        self.state.lock().unwrap().paper_in_adf = loaded;
+    }
+
+    pub fn retrieve_count(&self) -> u32 {
+        self.state.lock().unwrap().retrieve_count
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -100,6 +109,14 @@ pub struct FakeOptions {
     pub soap_busy_creates: u32,
     /// GetScannerElements does not answer (probe falls through to WSD).
     pub soap_dead: bool,
+    /// Delay SOAP RetrieveImage so the eSCL facade can answer Status first.
+    pub retrieve_delay_ms: u64,
+    /// Hold GetJobInfo until the client times out.
+    pub hang_get_job_info: bool,
+    /// Hold SOAP RetrieveImage until the client times out.
+    pub hang_retrieve: bool,
+    /// Hold WSD RetrieveImage until the client times out.
+    pub hang_wsd_retrieve: bool,
 }
 
 impl Default for FakeOptions {
@@ -115,6 +132,10 @@ impl Default for FakeOptions {
             retrieve_http_error: false,
             soap_busy_creates: 0,
             soap_dead: false,
+            retrieve_delay_ms: 0,
+            hang_get_job_info: false,
+            hang_retrieve: false,
+            hang_wsd_retrieve: false,
         }
     }
 }
@@ -134,6 +155,29 @@ fn run_server(server: Server, state: Arc<Mutex<FakeState>>, opts: FakeOptions) {
             let mut st = state.lock().unwrap();
             st.requests
                 .push(format!("{method:?} {url} {}", preview(&text)));
+        }
+        let hang = (opts.hang_get_job_info && text.contains("GetJobInfo"))
+            || (opts.hang_retrieve && text.contains("RetrieveImage") && !url.contains("/scanner") && !text.contains("wdp/scan"))
+            || (opts.hang_wsd_retrieve && text.contains("RetrieveImage") && (url.contains("/scanner") || text.contains("wdp/scan")));
+        if hang {
+            let state_h = state.clone();
+            let opts_h = opts.clone();
+            thread::spawn(move || {
+                thread::sleep(std::time::Duration::from_secs(120));
+                let (status, ctype, payload) = handle(&method, &url, &text, &body, &state_h, &opts_h);
+                let mut response = Response::new(
+                    StatusCode(status),
+                    Vec::new(),
+                    Cursor::new(payload),
+                    None,
+                    None,
+                );
+                if let Ok(h) = Header::from_bytes(b"Content-Type", ctype.as_bytes()) {
+                    response = response.with_header(h);
+                }
+                let _ = req.respond(response);
+            });
+            continue;
         }
         let (status, ctype, payload) = handle(&method, &url, &text, &body, &state, &opts);
         let mut response = Response::new(
@@ -159,7 +203,7 @@ fn handle(
     opts: &FakeOptions,
 ) -> (u16, String, Vec<u8>) {
     if url.contains("/scanner") || body.contains("wdp/scan") {
-        return handle_wsd(url, body, state);
+        return handle_wsd(url, body, state, opts);
     }
     if url.starts_with("/eSCL/ScannerCapabilities") && *method == Method::Get {
         if opts.escl_caps {
@@ -296,11 +340,15 @@ fn handle(
         return (200, "application/soap+xml; charset=utf-8".into(), xml.into_bytes());
     }
     if body.contains("RetrieveImage") {
+        if opts.retrieve_delay_ms > 0 {
+            thread::sleep(std::time::Duration::from_millis(opts.retrieve_delay_ms));
+        }
         if opts.retrieve_http_error {
             return (500, "text/plain".into(), b"retrieve failed".to_vec());
         }
         let mut st = state.lock().unwrap();
         st.last_retrieve_xml = body.to_string();
+        st.retrieve_count += 1;
         if st.adf_pages_remaining == 0 {
             let fault = r#"<?xml version="1.0" encoding="UTF-8"?>
 <SOAP-ENV:Envelope xmlns:SOAP-ENV="http://www.w3.org/2003/05/soap-envelope">
@@ -367,6 +415,7 @@ fn handle_wsd(
     url: &str,
     body: &str,
     state: &Arc<Mutex<FakeState>>,
+    _opts: &FakeOptions,
 ) -> (u16, String, Vec<u8>) {
     if body.contains("CreateScanJob") {
         let ticket = soap::parse_job_ticket(body);

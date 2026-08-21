@@ -57,11 +57,14 @@ AppKit window defaults to **100**.
 
 ## `hp-m177-bridge`
 
-Same eSCL listener as `hp-m177 bridge`. Bind `0.0.0.0` if other Macs on the
-LAN should import through this machine.
+The standalone `hp-m177-bridge` binary binds **`0.0.0.0`** by default (LAN
+Macs can import). The CLI subcommand `hp-m177 bridge` binds **`127.0.0.1`**
+by default (this Mac only). They are the same eSCL facade; only the listen
+address differs.
 
 ```
 hp-m177-bridge --port 8087
+hp-m177 bridge --port 8087 --bind 0.0.0.0:8087
 ```
 
 Leave that process running while Image Capture / Preview is open.
@@ -84,6 +87,8 @@ hp-m177-native-gui --exec add --host <printer-ip>
 hp-m177-native-gui --exec scan --source platen --color color --dpi 300 --format jpeg --output ~/Documents/scan.jpg
 hp-m177-native-gui --exec scan-all --output ~/Documents/scan.jpg
 hp-m177-native-gui --exec preview --host <printer-ip>
+hp-m177-native-gui --exec discover
+hp-m177-native-gui --exec add-printer
 hp-m177-native-gui --exec macos
 ```
 
@@ -101,7 +106,7 @@ hp-m177-gui
 Spotlight name: **HP Color LaserJet Pro MFP M177fw Scanner**.
 
 The window title is **HP Color LaserJet Pro MFP M177fw Scanner** (version
-**0.2.0**). Use **Discover**, **Add Scanner**, **Preview**, **Scan All**, and
+**0.2.1**). Use **Discover**, **Add Scanner**, **Preview**, **Scan All**, and
 **Scan** (or the **Scan** menu). **Scan All** is a full-page scan with no
 preview. Source / color / DPI / format are dropdown menus. Files go to
 `~/Documents/scan-<unix>.<ext>` (GUI default **100 dpi**). After Preview,

@@ -92,12 +92,25 @@ AppKit **Add Scanner to macOS** action (and `--exec macos`) launches this
 binary and advertises **HP Color LaserJet Pro MFP M177fw Scanner** so
 Image Capture, Preview, and other programs can scan.
 
+ScanSettings `ScanRegion` is forwarded into `scan()`: PWG eSCL offsets and
+sizes in **1/300 inch** (`pwg:XOffset` / `Width` / `Height`) are converted
+to the SOAP ticket’s **1/1000 inch**. ScannerStatus `AdfState` is
+`ScannerAdfLoaded` or `ScannerAdfEmpty` from paper-in-feeder (`PaperInADF`
+via `set_adf_loaded` / `refresh_adf_from_device`), not from whether the
+hardware merely has an ADF.
+
 PDF output is always a **one-page** JPEG wrapper (`finalize()` keeps the
 first retrieved page). TIFF is produced locally by the CLI/GUI; the eSCL
 facade advertises JPEG and PDF only.
 
 ## DIME
 
-See `src/dime.rs` (draft-nielsen-dime-02). Spec-faithful fixture:
-`fixtures/dime-jpeg.bin`. Continuation (CF) chunks are concatenated by
-`extract_image`; `fixtures/dime-jpeg-chunked.bin` covers that path.
+See `src/dime.rs` (draft-nielsen-dime-02). **Spec-faithful** (not a live
+M177fw retrieve) fixture: `fixtures/dime-jpeg.bin`. Continuation (CF)
+chunks are concatenated by `extract_image`;
+`fixtures/dime-jpeg-chunked.bin` covers that path.
+
+Live WSD RetrieveImage MTOM/XOP (captured 2026-08-21 from this MFP, 100
+dpi platen) is `fixtures/live/wsd-RetrieveImage.mtom`. Live SOAP
+RetrieveImage DIME JPEG was not captured: CreateScanJob on TCP 8289
+returned Error 13 (busy) after the WSD job.

@@ -95,6 +95,21 @@ fn appkit_gui_exists_and_invokes_cli() {
         "GUI must offer Scan All without a preview crop"
     );
     assert!(
+        {
+            let idx = swift.find("func performScan").expect("performScan");
+            swift[idx..idx + 900].contains("defaultDocumentsPath")
+        },
+        "Scan / Scan All must mint scan-<unix> at job time, not only at launch"
+    );
+    assert!(
+        {
+            let idx = swift.find("func runPreview").expect("runPreview");
+            let body = &swift[idx..idx + 900];
+            body.contains("--source\", \"platen\"") && body.contains("--dpi\", \"100\"")
+        },
+        "Preview must always pass --source platen and --dpi 100"
+    );
+    assert!(
         swift.contains("showDropdown") && swift.contains("popUp") && swift.contains("chooseCycle"),
         "Source/Color/DPI/Format must be real dropdown menus, not click-to-cycle"
     );
@@ -226,15 +241,47 @@ fn docs_match_shipped_install_scan_and_gui_flags() {
         "README title must say Mac scanner client"
     );
     assert!(
-        include_str!("../Cargo.toml").contains("version = \"0.2.0\"")
-            && install.contains("0.2.0")
-            && swift.contains("0.2.0")
-            && readme.contains("0.2.0"),
-        "crate, app, UI, and README must be version 0.2.0"
+        include_str!("../Cargo.toml").contains("version = \"0.2.1\"")
+            && install.contains("0.2.1")
+            && swift.contains("0.2.1")
+            && readme.contains("0.2.1")
+            && usage.contains("0.2.1"),
+        "crate, app, UI, README, and USAGE must be version 0.2.1"
     );
     assert!(
         readme.contains("Scan All") && usage.contains("dropdown"),
         "docs must describe Scan All and dropdown menus"
+    );
+    assert!(
+        req.contains("HP Color LaserJet Pro MFP M177fw Scanner")
+            && req.contains("add-printer"),
+        "REQUIREMENTS must use the Scanner display name and --exec add-printer"
+    );
+    assert!(
+        usage.contains("discover")
+            && usage.contains("add-printer")
+            && usage.contains("0.0.0.0")
+            && usage.contains("127.0.0.1"),
+        "USAGE must document --exec discover/add-printer and both bind defaults"
+    );
+    assert!(
+        readme.contains("JPEG platen") && readme.contains("PDF ADF"),
+        "README Tests must document GUI twice-scan JPEG platen then PDF ADF"
+    );
+    assert!(
+        protocol.contains("1/300") && protocol.contains("1/1000")
+            && protocol.contains("AdfState")
+            && protocol.to_ascii_lowercase().contains("spec-faithful")
+            && protocol.contains("wsd-RetrieveImage.mtom")
+            && protocol.contains("set_adf_loaded"),
+        "PROTOCOL must document PWG ScanRegion mapping, AdfState, spec-faithful DIME, and live WSD retrieve"
+    );
+    assert!(
+        agents.contains("Scan All")
+            && agents.contains("dropdown")
+            && agents.contains("blinking")
+            && agents.contains("Ready"),
+        "AGENTS.md must list Scan All, dropdown menus, blinking wait, and Ready copy"
     );
     assert!(
         install.contains("CFBundleDocumentTypes")

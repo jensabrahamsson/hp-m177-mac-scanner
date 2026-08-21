@@ -4,13 +4,18 @@
 use crate::error::{Error, Result};
 use crate::escl;
 use crate::imagefmt;
-use crate::model::{DeviceRecord, OutputFormat, PRODUCT_NAME};
+use crate::model::{
+    DeviceRecord, JobProtocol, OutputFormat, DEFAULT_SOAP_PORT, PRODUCT_NAME,
+};
+use crate::soap;
+use crate::transport::{HttpRequest, Transport, UreqTransport};
 use crate::scan;
 use std::collections::HashMap;
 use std::io::Cursor;
 use std::net::{SocketAddr, TcpListener};
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time::{Duration, Instant};
 use tiny_http::{Header, Method, Request, Response, Server, StatusCode};
 
 #[derive(Clone)]
@@ -18,12 +23,15 @@ struct Job {
     body: Vec<u8>,
     mime: String,
     consumed: bool,
+    ready: bool,
+    error: Option<String>,
 }
 
 struct Inner {
     jobs: HashMap<String, Job>,
     device: Option<DeviceRecord>,
     adf_loaded: bool,
+    adf_probed_at: Option<Instant>,
 }
 
 pub struct EsclFacade {
@@ -39,11 +47,13 @@ impl EsclFacade {
     pub fn bind(addr: &str, device: Option<DeviceRecord>) -> Result<Self> {
         let listener = TcpListener::bind(addr)?;
         let bound = listener.local_addr()?;
-        let adf_loaded = device.as_ref().map(|d| d.has_adf).unwrap_or(true);
+        // Paper in the feeder is independent of whether the hardware has an ADF.
+        let adf_loaded = false;
         let inner = Arc::new(Mutex::new(Inner {
             jobs: HashMap::new(),
             device,
             adf_loaded,
+            adf_probed_at: None,
         }));
         let server = Server::from_listener(listener, None)
             .map_err(|e| Error::msg(format!("eSCL facade listen: {e}")))?;
@@ -57,17 +67,79 @@ impl EsclFacade {
 
     pub fn set_device(&self, device: DeviceRecord) {
         let mut g = self.inner.lock().unwrap();
-        g.adf_loaded = device.has_adf;
         g.device = Some(device);
+        g.adf_probed_at = None;
     }
 
     pub fn set_adf_loaded(&self, loaded: bool) {
-        self.inner.lock().unwrap().adf_loaded = loaded;
+        let mut g = self.inner.lock().unwrap();
+        g.adf_loaded = loaded;
+        g.adf_probed_at = Some(Instant::now());
+    }
+
+    pub fn refresh_adf_from_device(&self) {
+        refresh_adf(&self.inner);
+    }
+
+    pub fn adf_loaded(&self) -> bool {
+        self.inner.lock().unwrap().adf_loaded
     }
 
     pub fn url(&self) -> String {
         format!("http://{}:{}", self.addr.ip(), self.addr.port())
     }
+}
+
+fn soap_probe_ports(device: &DeviceRecord) -> Vec<u16> {
+    let job_port = match device.job {
+        JobProtocol::Soap { port } | JobProtocol::Escl { port } | JobProtocol::Wsd { port } => {
+            port
+        }
+    };
+    let mut ports = vec![job_port];
+    if job_port != DEFAULT_SOAP_PORT {
+        ports.push(DEFAULT_SOAP_PORT);
+    }
+    ports
+}
+
+fn refresh_adf(inner: &Arc<Mutex<Inner>>) {
+    let (host, ports) = {
+        let g = inner.lock().unwrap();
+        if let Some(at) = g.adf_probed_at {
+            if at.elapsed() < Duration::from_secs(1) {
+                return;
+            }
+        }
+        match g.device.as_ref() {
+            Some(d) => (d.host.clone(), soap_probe_ports(d)),
+            None => return,
+        }
+    };
+    for port in ports {
+        if let Some(loaded) = probe_paper_in_adf(&host, port) {
+            let mut g = inner.lock().unwrap();
+            g.adf_loaded = loaded;
+            g.adf_probed_at = Some(Instant::now());
+            return;
+        }
+    }
+}
+
+pub fn probe_paper_in_adf(host: &str, port: u16) -> Option<bool> {
+    let t = UreqTransport::new(Duration::from_secs(2));
+    let url = format!("http://{host}:{port}/");
+    let xml = soap::get_scanner_elements_xml();
+    let req = HttpRequest::post(url, xml.into_bytes(), soap::SOAP_CONTENT_TYPE)
+        .with_timeout(Duration::from_secs(2));
+    let body = match t.execute(req) {
+        Ok(r) => r.text(),
+        Err(Error::Http { detail, .. }) => detail,
+        Err(_) => return None,
+    };
+    soap::parse_capabilities(&body)
+        .ok()
+        .map(|c| c.paper_in_adf)
 }
 
 fn run(server: Server, inner: Arc<Mutex<Inner>>) {
@@ -125,6 +197,7 @@ fn dispatch(
         );
     }
     if (*method == Method::Get) && (path == "/eSCL/ScannerStatus" || path == "/ScannerStatus") {
+        refresh_adf(inner);
         let jobs: Vec<(String, &str)> = inner
             .lock()
             .unwrap()
@@ -133,7 +206,13 @@ fn dispatch(
             .map(|(id, j)| {
                 (
                     id.clone(),
-                    if j.consumed { "Completed" } else { "Processing" },
+                    if j.error.is_some() {
+                        "Aborted"
+                    } else if j.consumed {
+                        "Completed"
+                    } else {
+                        "Processing"
+                    },
                 )
             })
             .collect();
@@ -189,38 +268,53 @@ fn create_job(
             vec![],
         );
     };
-    let transport = crate::transport::UreqTransport::new(std::time::Duration::from_secs(60));
-    match scan::scan(&transport, &device, &req) {
-        Ok(out) => {
-            let id = uuid::Uuid::new_v4().to_string();
-            let mime = if out.format == OutputFormat::Pdf || imagefmt::is_pdf(&out.bytes) {
-                "application/pdf"
-            } else {
-                "image/jpeg"
-            };
-            inner.lock().unwrap().jobs.insert(
-                id.clone(),
-                Job {
-                    body: out.bytes,
-                    mime: mime.into(),
-                    consumed: false,
-                },
-            );
-            let location = format!("/eSCL/ScanJobs/{id}");
-            (
-                201,
-                "text/xml; charset=utf-8".into(),
-                format!("<scan:JobUri>{location}</scan:JobUri>").into_bytes(),
-                vec![("Location".into(), location)],
-            )
-        }
-        Err(e) => (
-            503,
-            "text/plain".into(),
-            format!("scan failed: {e}").into_bytes(),
-            vec![],
-        ),
-    }
+    let id = uuid::Uuid::new_v4().to_string();
+    inner.lock().unwrap().jobs.insert(
+        id.clone(),
+        Job {
+            body: Vec::new(),
+            mime: "image/jpeg".into(),
+            consumed: false,
+            ready: false,
+            error: None,
+        },
+    );
+    let bg = inner.clone();
+    let job_id = id.clone();
+    let _ = thread::Builder::new()
+        .name("hp-m177-escl-job".into())
+        .spawn(move || {
+            let transport = crate::transport::UreqTransport::new(std::time::Duration::from_secs(90));
+            let result = scan::scan(&transport, &device, &req);
+            if let Ok(mut g) = bg.lock() {
+                if let Some(job) = g.jobs.get_mut(&job_id) {
+                    match result {
+                        Ok(out) => {
+                            job.mime = if out.format == OutputFormat::Pdf
+                                || imagefmt::is_pdf(&out.bytes)
+                            {
+                                "application/pdf".into()
+                            } else {
+                                "image/jpeg".into()
+                            };
+                            job.body = out.bytes;
+                            job.ready = true;
+                        }
+                        Err(e) => {
+                            job.error = Some(e.to_string());
+                            job.ready = true;
+                        }
+                    }
+                }
+            }
+        });
+    let location = format!("/eSCL/ScanJobs/{id}");
+    (
+        201,
+        "text/xml; charset=utf-8".into(),
+        format!("<scan:JobUri>{location}</scan:JobUri>").into_bytes(),
+        vec![("Location".into(), location)],
+    )
 }
 
 fn next_document(
@@ -232,6 +326,18 @@ fn next_document(
     };
     let mut g = inner.lock().unwrap();
     match g.jobs.get_mut(&id) {
+        Some(job) if !job.ready => (
+            503,
+            "text/plain".into(),
+            b"processing".to_vec(),
+            vec![],
+        ),
+        Some(job) if job.error.is_some() => (
+            503,
+            "text/plain".into(),
+            job.error.clone().unwrap_or_default().into_bytes(),
+            vec![],
+        ),
         Some(job) if !job.consumed => {
             job.consumed = true;
             (200, job.mime.clone(), job.body.clone(), vec![])
@@ -260,4 +366,64 @@ pub fn capabilities_mention_required_features(xml: &str) -> bool {
 #[allow(dead_code)]
 fn _product() -> &'static str {
     PRODUCT_NAME
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::transport::UreqTransport;
+
+    #[test]
+    fn scanner_status_adf_empty_and_loaded_without_device() {
+        let facade = EsclFacade::start(None).unwrap();
+        let t = UreqTransport::default();
+        let url = format!("{}/eSCL/ScannerStatus", facade.url());
+        let empty = t.get(&url).unwrap().text();
+        assert!(empty.contains("ScannerAdfEmpty"), "{empty}");
+        facade.set_adf_loaded(true);
+        let loaded = t.get(&url).unwrap().text();
+        assert!(loaded.contains("ScannerAdfLoaded"), "{loaded}");
+        facade.set_adf_loaded(false);
+        let empty2 = t.get(&url).unwrap().text();
+        assert!(empty2.contains("ScannerAdfEmpty"), "{empty2}");
+    }
+
+    #[test]
+    fn probe_paper_in_adf_reads_fake_paper_flag() {
+        use crate::fake::{FakeDevice, FakeOptions};
+        let fake = FakeDevice::start_with(FakeOptions {
+            paper_in_adf: false,
+            ..FakeOptions::default()
+        })
+        .unwrap();
+        assert_eq!(
+            probe_paper_in_adf(&fake.host(), fake.port()),
+            Some(false)
+        );
+        fake.set_paper_in_adf(true);
+        assert_eq!(
+            probe_paper_in_adf(&fake.host(), fake.port()),
+            Some(true)
+        );
+    }
+
+    #[test]
+    fn soap_probe_ports_try_job_then_default_soap() {
+        let wsd = DeviceRecord {
+            id: "w".into(),
+            name: "M177fw".into(),
+            host: "127.0.0.1".into(),
+            job: JobProtocol::Wsd { port: 3911 },
+            has_escl_caps: true,
+            has_platen: true,
+            has_adf: true,
+            uuid: None,
+        };
+        assert_eq!(soap_probe_ports(&wsd), vec![3911, DEFAULT_SOAP_PORT]);
+        let soap = DeviceRecord {
+            job: JobProtocol::Soap { port: DEFAULT_SOAP_PORT },
+            ..wsd.clone()
+        };
+        assert_eq!(soap_probe_ports(&soap), vec![DEFAULT_SOAP_PORT]);
+    }
 }

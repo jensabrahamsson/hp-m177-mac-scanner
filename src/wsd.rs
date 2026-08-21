@@ -236,4 +236,17 @@ mod tests {
         let jpeg = imagefmt::raster_to_jpeg(&got).unwrap();
         assert!(imagefmt::is_jpeg(&jpeg));
     }
+
+    #[test]
+    fn live_wsd_retrieve_mtom_decodes_to_bmp() {
+        let raw = include_bytes!("../fixtures/live/wsd-RetrieveImage.mtom");
+        let bmp = extract_image(raw).expect("shipped WSD extractor on live MTOM");
+        assert!(
+            imagefmt::is_bmp(&bmp) || imagefmt::is_dib(&bmp),
+            "live WSD retrieve must yield BMP/DIB, len={}",
+            bmp.len()
+        );
+        let jpeg = imagefmt::raster_to_jpeg(&bmp).expect("BMP to JPEG");
+        assert!(imagefmt::is_jpeg(&jpeg));
+    }
 }
