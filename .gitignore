@@ -5,3 +5,6 @@ gui/AppIcon.iconset
 *.swp
 .env
 hp-m177-gui.app
+improvement_plan_*.md
+målplan-*.md
+goal-plan-*.md
