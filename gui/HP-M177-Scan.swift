@@ -768,7 +768,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func versionString() -> String {
-        let short = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.2.1"
+        let short = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.3.0"
         let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "16"
         return "\(short) (\(build))"
     }

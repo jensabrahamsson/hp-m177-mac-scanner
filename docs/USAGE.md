@@ -106,7 +106,7 @@ hp-m177-gui
 Spotlight name: **HP Color LaserJet Pro MFP M177fw Scanner**.
 
 The window title is **HP Color LaserJet Pro MFP M177fw Scanner** (version
-**0.2.1**). Use **Discover**, **Add Scanner**, **Preview**, **Scan All**, and
+**0.3.0**). Use **Discover**, **Add Scanner**, **Preview**, **Scan All**, and
 **Scan** (or the **Scan** menu). **Scan All** is a full-page scan with no
 preview. Source / color / DPI / format are dropdown menus. Files go to
 `~/Documents/scan-<unix>.<ext>` (GUI default **100 dpi**). After Preview,

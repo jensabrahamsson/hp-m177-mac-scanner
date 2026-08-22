@@ -234,7 +234,50 @@ pub fn parse_capabilities(xml: &str) -> Result<SoapCapabilities> {
         adf_max,
         platen_optical_dpi: widths.get(2).copied().unwrap_or(1200),
         adf_optical_dpi: widths.get(5).copied().unwrap_or(300),
+        make_and_model: parse_make_and_model(xml),
     })
+}
+
+/// Product name from GetScannerElements when eSCL MakeAndModel is missing.
+/// Ignores firmware junk like `ModelNumber` `juntest123`.
+pub fn parse_make_and_model(xml: &str) -> Option<String> {
+    if let Some(s) = first_text(xml, "MakeAndModel") {
+        let t = s.trim();
+        if looks_like_product_name(t) {
+            return Some(t.to_string());
+        }
+    }
+    let mfr = first_text(xml, "Manufacturer").map(|s| s.trim().to_string());
+    let model = first_text(xml, "Model").or_else(|| first_text(xml, "ModelName"));
+    if let (Some(mfr), Some(model)) = (mfr.as_deref(), model.as_deref()) {
+        let combined = format!("{} {}", mfr.trim(), model.trim());
+        if looks_like_product_name(&combined) {
+            return Some(combined);
+        }
+    }
+    if let Some(model) = model {
+        let t = model.trim();
+        if looks_like_product_name(t) {
+            return Some(t.to_string());
+        }
+    }
+    None
+}
+
+fn looks_like_product_name(s: &str) -> bool {
+    let t = s.trim();
+    if t.len() < 5 {
+        return false;
+    }
+    let lower = t.to_ascii_lowercase();
+    if lower.contains("juntest") || lower == "unknown" {
+        return false;
+    }
+    lower.contains("hp")
+        || lower.contains("laser")
+        || lower.contains("office")
+        || lower.contains("scan")
+        || t.contains(' ')
 }
 
 pub fn soap_fault(xml: &str) -> Option<String> {
@@ -370,5 +413,32 @@ mod tests {
         assert!(caps.supports_color(ColorMode::Gray));
         assert!(caps.formats.iter().any(|f| f == "jfif"));
         assert_eq!(caps.state, "Idle");
+        assert!(
+            caps.make_and_model.is_none()
+                || caps
+                    .make_and_model
+                    .as_deref()
+                    .is_some_and(|s| !s.to_ascii_lowercase().contains("juntest")),
+            "ModelNumber junk must not become the product name: {:?}",
+            caps.make_and_model
+        );
+    }
+
+    #[test]
+    fn parse_make_and_model_accepts_product_string_not_fixture_junk() {
+        let xml = r#"<ScanElements><MakeAndModel>HP Color LaserJet Pro MFP M176n</MakeAndModel></ScanElements>"#;
+        assert_eq!(
+            parse_make_and_model(xml).as_deref(),
+            Some("HP Color LaserJet Pro MFP M176n")
+        );
+        let junk = r#"<ScanElements><ModelNumber>juntest123</ModelNumber></ScanElements>"#;
+        assert_eq!(parse_make_and_model(junk), None);
+        let mfr = r#"<ScanElements><Manufacturer>HP</Manufacturer><Model>LaserJet Pro MFP M176n</Model></ScanElements>"#;
+        assert_eq!(
+            parse_make_and_model(mfr).as_deref(),
+            Some("HP LaserJet Pro MFP M176n")
+        );
+        let empty = r#"<ScanElements><MakeAndModel>   </MakeAndModel></ScanElements>"#;
+        assert_eq!(parse_make_and_model(empty), None);
     }
 }

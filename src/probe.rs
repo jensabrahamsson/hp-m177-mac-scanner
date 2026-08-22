@@ -23,7 +23,7 @@ pub fn probe_host_ports(
     escl_port: u16,
 ) -> Result<ProbeResult> {
     let host = strip_scheme(host);
-    let mut name = PRODUCT_NAME.to_string();
+    let mut name = String::new();
     let mut escl_caps = false;
     let mut escl_jobs = false;
 
@@ -35,7 +35,10 @@ pub fn probe_host_ports(
                 if escl::looks_like_capabilities(&text) {
                     escl_caps = true;
                     if let Some(model) = crate::xmlutil::first_text(&text, "MakeAndModel") {
-                        name = model;
+                        let t = model.trim();
+                        if !t.is_empty() {
+                            name = t.to_string();
+                        }
                     }
                     escl_jobs = escl_jobs_available(transport, &host, port);
                     break;
@@ -51,6 +54,14 @@ pub fn probe_host_ports(
         Ok(c) => Some(c),
         Err(_) => None,
     };
+    if name.is_empty() {
+        if let Some(model) = soap.as_ref().and_then(|c| c.make_and_model.clone()) {
+            name = model;
+        }
+    }
+    if name.is_empty() {
+        name = PRODUCT_NAME.to_string();
+    }
 
     let wsd_port = if wsd_alive(transport, &host, soap_port) {
         soap_port
@@ -141,4 +152,52 @@ pub fn split_host_port(input: &str, default_port: u16) -> (String, u16) {
         }
     }
     (cleaned, default_port)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::fake::FakeDevice;
+    use crate::transport::UreqTransport;
+
+    #[test]
+    fn probe_fake_m177_uses_escl_make_and_model_and_soap_jobs() {
+        let fake = FakeDevice::start().unwrap();
+        let t = UreqTransport::default();
+        let p = probe_host_ports(&t, &fake.host(), fake.port(), fake.port()).unwrap();
+        assert!(
+            p.name.contains("M177fw"),
+            "validated M177fw caps must keep the real product name, got {}",
+            p.name
+        );
+        assert!(p.escl_caps);
+        assert!(!p.escl_jobs, "live-like fake ScanJobs are 404");
+        match p.preferred {
+            Some(JobProtocol::Soap { port }) => assert_eq!(port, fake.port()),
+            other => panic!("M177fw-like fake must prefer SOAP, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn soap_only_fake_does_not_take_juntest_model_number() {
+        use crate::fake::FakeOptions;
+        let fake = FakeDevice::start_with(FakeOptions {
+            escl_caps: false,
+            ..FakeOptions::default()
+        })
+        .unwrap();
+        let t = UreqTransport::default();
+        let p = probe_host_ports(&t, &fake.host(), fake.port(), fake.port()).unwrap();
+        assert!(
+            !p.name.to_ascii_lowercase().contains("juntest"),
+            "SOAP ModelNumber junk must not win: {}",
+            p.name
+        );
+        assert_eq!(p.name, crate::model::PRODUCT_NAME);
+        assert!(!p.escl_caps);
+        match p.preferred {
+            Some(JobProtocol::Soap { port }) => assert_eq!(port, fake.port()),
+            other => panic!("SOAP-only fake must prefer SOAP, got {other:?}"),
+        }
+    }
 }

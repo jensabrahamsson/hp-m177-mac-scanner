@@ -189,10 +189,25 @@ fn dispatch(
     if (*method == Method::Get)
         && (path == "/eSCL/ScannerCapabilities" || path == "/ScannerCapabilities")
     {
+        let (uuid, model) = {
+            let g = inner.lock().unwrap();
+            match g.device.as_ref() {
+                Some(d) => (
+                    d.uuid
+                        .clone()
+                        .unwrap_or_else(|| escl::DEFAULT_UUID.to_string()),
+                    d.name.clone(),
+                ),
+                None => (
+                    escl::DEFAULT_UUID.to_string(),
+                    crate::model::PRODUCT_NAME.to_string(),
+                ),
+            }
+        };
         return (
             200,
             "text/xml; charset=utf-8".into(),
-            escl::default_capabilities_xml().into_bytes(),
+            escl::capabilities_xml(&uuid, &model).into_bytes(),
             vec![],
         );
     }
@@ -425,5 +440,29 @@ mod tests {
             ..wsd.clone()
         };
         assert_eq!(soap_probe_ports(&soap), vec![DEFAULT_SOAP_PORT]);
+    }
+
+    #[test]
+    fn scanner_capabilities_use_saved_device_name() {
+        let rec = DeviceRecord {
+            id: "o".into(),
+            name: "Other LAN MFP".into(),
+            host: "127.0.0.1".into(),
+            job: JobProtocol::Soap { port: 9 },
+            has_escl_caps: true,
+            has_platen: true,
+            has_adf: true,
+            uuid: None,
+        };
+        let facade = EsclFacade::start(Some(rec)).unwrap();
+        let t = UreqTransport::default();
+        let xml = t
+            .get(&format!("{}/eSCL/ScannerCapabilities", facade.url()))
+            .unwrap()
+            .text();
+        assert!(
+            xml.contains("Other LAN MFP"),
+            "facade must advertise the probed make/model: {xml}"
+        );
     }
 }

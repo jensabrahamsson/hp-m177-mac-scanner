@@ -13,6 +13,8 @@ use crate::xmlutil::first_text;
 
 pub const ESCL_NS: &str = "http://schemas.hp.com/imaging/escl/2011/05/03";
 pub const PWG_NS: &str = "http://www.pwg.org/schemas/2010/12/sm";
+/// Default AirPrint UUID used when the saved device has none (live M177fw).
+pub const DEFAULT_UUID: &str = "8adb6a9a-f28e-31fc-15de-50e0c4efdd92";
 
 pub fn capabilities_xml(uuid: &str, make_and_model: &str) -> String {
     format!(
@@ -249,10 +251,7 @@ pub fn parse_device_caps_summary(xml: &str) -> (bool, bool, bool) {
 }
 
 pub fn default_capabilities_xml() -> String {
-    capabilities_xml(
-        "8adb6a9a-f28e-31fc-15de-50e0c4efdd92",
-        PRODUCT_NAME,
-    )
+    capabilities_xml(DEFAULT_UUID, PRODUCT_NAME)
 }
 
 fn xml_escape(s: &str) -> String {

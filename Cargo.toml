@@ -1,9 +1,9 @@
 [package]
 name = "hp-m177"
-version = "0.2.1"
+version = "0.3.0"
 edition = "2021"
 rust-version = "1.82"
-description = "Scanner client, CLI, native Mac GUI, and local eSCL/AirScan bridge for the HP Color LaserJet Pro MFP M177fw"
+description = "Mac scanner client (eSCL / HP SOAP / WSD) with a local AirScan bridge; validated on the HP Color LaserJet Pro MFP M177fw"
 license = "MIT"
 authors = ["Jens Abrahamsson"]
 readme = "README.md"

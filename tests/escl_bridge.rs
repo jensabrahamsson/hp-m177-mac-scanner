@@ -34,6 +34,7 @@ fn cycle(label: &str) {
         Some(fake.port()),
     )
     .unwrap();
+    let device_name = rec.name.clone();
     let facade = EsclFacade::start(Some(rec)).unwrap();
     let base = format!("{}/eSCL", facade.url());
 
@@ -45,6 +46,10 @@ fn cycle(label: &str) {
         "{label} capabilities missing platen/ADF/color/gray/jpeg/pdf:\n{xml}"
     );
     assert!(xml.contains("RGB24") && xml.contains("Grayscale8"));
+    assert!(
+        xml.contains("M177fw") || xml.contains(&device_name),
+        "{label} facade MakeAndModel must follow the probed device, got {xml}"
+    );
 
     let status = t.get(&format!("{base}/ScannerStatus")).unwrap();
     assert!(status.is_success(), "{label} status HTTP {}", status.status);
@@ -237,6 +242,14 @@ fn bridge_binary_http_twice() {
             thread::sleep(Duration::from_millis(50));
         }
         assert!(ready, "bridge run-{i} never answered ScannerCapabilities");
+        let caps = t
+            .get(&format!("{origin}/eSCL/ScannerCapabilities"))
+            .unwrap()
+            .text();
+        assert!(
+            caps.contains("M177fw"),
+            "shipped hp-m177-bridge must expose probed MakeAndModel: {caps}"
+        );
         hit_escl_once(&t, &origin, &fake, &format!("bridge-run-{i}"));
         let _ = child.kill();
         let _ = child.wait();

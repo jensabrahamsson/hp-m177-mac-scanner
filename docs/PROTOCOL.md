@@ -82,6 +82,11 @@ retrieve the client sends a best-effort `CancelJob`.
   large). The SOAP path tries WSD on the SOAP port `/scanner` first, then
   TCP **3911**.
 
+`scan()` on a newly added host prefers **native eSCL ScanJobs** when
+`GET /eSCL/ScanJobs` is not 404, else HP SOAP, else WSD. The AirScan
+Bonjour instance is `{MakeAndModel} Scanner` from that probe (M177fw stays
+**HP Color LaserJet Pro MFP M177fw Scanner**).
+
 ## Local eSCL facade
 
 `hp-m177-bridge` implements modern eSCL (`2011/05/03`) toward the Mac and
@@ -89,7 +94,8 @@ calls the shared `scan()` backend toward the MFP (SOAP, WSD, or native eSCL
 as recorded on the device — not SOAP-only). Tests drive this against
 `hp-m177-fake`. Image Capture sees platen+ADF, color+gray, JPEG+PDF. The
 AppKit **Add Scanner to macOS** action (and `--exec macos`) launches this
-binary and advertises **HP Color LaserJet Pro MFP M177fw Scanner** so
+binary and advertises `{probed MakeAndModel} Scanner` (on the validated
+M177fw that is **HP Color LaserJet Pro MFP M177fw Scanner**) so
 Image Capture, Preview, and other programs can scan.
 
 ScanSettings `ScanRegion` is forwarded into `scan()`: PWG eSCL offsets and

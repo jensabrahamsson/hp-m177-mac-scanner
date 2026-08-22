@@ -228,6 +228,16 @@ pub fn run(cli: Cli, store: &mut Store, transport: &dyn Transport, out: &mut dyn
         } => {
             let bind = bind.unwrap_or_else(|| format!("127.0.0.1:{port}"));
             let device = store.default_device().ok();
+            let (instance, ty) = match &device {
+                Some(d) => (
+                    crate::model::airscan_instance_name(&d.name),
+                    d.name.clone(),
+                ),
+                None => (
+                    crate::APP_DISPLAY_NAME.to_string(),
+                    crate::PRODUCT_NAME.to_string(),
+                ),
+            };
             let facade = crate::facade::EsclFacade::bind(&bind, device)?;
             facade.refresh_adf_from_device();
             writeln!(
@@ -238,9 +248,10 @@ pub fn run(cli: Cli, store: &mut Store, transport: &dyn Transport, out: &mut dyn
             let _adv = if no_advertise {
                 None
             } else {
-                match crate::advertise::Advertisement::start(
+                match crate::advertise::Advertisement::start_with_ty(
                     facade.addr.port(),
-                    crate::APP_DISPLAY_NAME,
+                    &instance,
+                    &ty,
                 )
                 {
                     Ok(a) => {

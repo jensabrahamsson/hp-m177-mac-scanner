@@ -1,5 +1,4 @@
 use crate::error::{Error, Result};
-use crate::model::PRODUCT_NAME;
 use mdns_sd::{ServiceDaemon, ServiceInfo};
 use std::net::IpAddr;
 use std::process::{Child, Command, Stdio};
@@ -15,13 +14,18 @@ pub struct Advertisement {
 
 impl Advertisement {
     pub fn start(port: u16, instance: &str) -> Result<Self> {
+        Self::start_with_ty(port, instance, crate::model::PRODUCT_NAME)
+    }
+
+    /// `instance` is the Bonjour name; `ty` is the AirScan TXT make/model.
+    pub fn start_with_ty(port: u16, instance: &str, ty: &str) -> Result<Self> {
         if cfg!(target_os = "macos") {
-            match start_dns_sd(port, instance) {
+            match start_dns_sd(port, instance, ty) {
                 Ok(adv) => return Ok(adv),
                 Err(e) => eprintln!("dns-sd advertise failed ({e}); falling back to mdns-sd"),
             }
         }
-        start_mdns_sd(port, instance)
+        start_mdns_sd(port, instance, ty)
     }
 
     pub fn stop(mut self) {
@@ -44,7 +48,7 @@ impl Drop for Advertisement {
     }
 }
 
-fn start_dns_sd(port: u16, instance: &str) -> Result<Advertisement> {
+fn start_dns_sd(port: u16, instance: &str, ty: &str) -> Result<Advertisement> {
     let child = Command::new("dns-sd")
         .args([
             "-R",
@@ -55,7 +59,7 @@ fn start_dns_sd(port: u16, instance: &str) -> Result<Advertisement> {
             "txtvers=1",
             "vers=2.63",
             "rs=eSCL",
-            &format!("ty={PRODUCT_NAME}"),
+            &format!("ty={ty}"),
             "pdl=image/jpeg,application/pdf",
             "cs=color,grayscale",
             "is=platen,adf",
@@ -73,7 +77,7 @@ fn start_dns_sd(port: u16, instance: &str) -> Result<Advertisement> {
     })
 }
 
-fn start_mdns_sd(port: u16, instance: &str) -> Result<Advertisement> {
+fn start_mdns_sd(port: u16, instance: &str, ty: &str) -> Result<Advertisement> {
     let mdns = ServiceDaemon::new()
         .map_err(|e| Error::msg(format!("cannot start mDNS responder: {e}")))?;
     let host = local_hostname();
@@ -85,7 +89,7 @@ fn start_mdns_sd(port: u16, instance: &str) -> Result<Advertisement> {
         ("txtvers", "1"),
         ("vers", "2.63"),
         ("rs", "eSCL"),
-        ("ty", PRODUCT_NAME),
+        ("ty", ty),
         ("pdl", "image/jpeg,application/pdf"),
         ("cs", "color,grayscale"),
         ("is", "platen,adf"),
@@ -153,7 +157,7 @@ pub fn uscan_txt_records() -> Vec<(&'static str, &'static str)> {
         ("txtvers", "1"),
         ("vers", "2.63"),
         ("rs", "eSCL"),
-        ("ty", PRODUCT_NAME),
+        ("ty", crate::model::PRODUCT_NAME),
         ("pdl", "image/jpeg,application/pdf"),
         ("cs", "color,grayscale"),
         ("is", "platen,adf"),

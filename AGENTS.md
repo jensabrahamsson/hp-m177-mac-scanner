@@ -4,9 +4,10 @@ Guidance for humans and coding agents working in this repository.
 
 ## What this is
 
-A scanner-first Mac client for one LAN MFP (HP Color LaserJet Pro MFP M177fw).
-Printing stays on the existing AirPrint/CUPS queue. See `REQUIREMENTS.md` for
-the product contract and `docs/PROTOCOL.md` for on-the-wire behavior.
+A scanner-first Mac client for LAN MFPs (eSCL jobs, HP SOAP/DIME, or WSD
+`dib`). Validated on the HP Color LaserJet Pro MFP M177fw. Printing stays on
+the existing AirPrint/CUPS queue. See `REQUIREMENTS.md` for the product
+contract and `docs/PROTOCOL.md` for on-the-wire behavior.
 
 ## Toolchain
 

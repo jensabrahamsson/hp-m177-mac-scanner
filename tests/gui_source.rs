@@ -241,12 +241,12 @@ fn docs_match_shipped_install_scan_and_gui_flags() {
         "README title must say Mac scanner client"
     );
     assert!(
-        include_str!("../Cargo.toml").contains("version = \"0.2.1\"")
-            && install.contains("0.2.1")
-            && swift.contains("0.2.1")
-            && readme.contains("0.2.1")
-            && usage.contains("0.2.1"),
-        "crate, app, UI, README, and USAGE must be version 0.2.1"
+        include_str!("../Cargo.toml").contains("version = \"0.3.0\"")
+            && install.contains("0.3.0")
+            && swift.contains("0.3.0")
+            && readme.contains("0.3.0")
+            && usage.contains("0.3.0"),
+        "crate, app, UI, README, and USAGE must be version 0.3.0"
     );
     assert!(
         readme.contains("Scan All") && usage.contains("dropdown"),
@@ -291,7 +291,8 @@ fn docs_match_shipped_install_scan_and_gui_flags() {
         "app must register as an Image Capture destination and open scanned files"
     );
     assert!(
-        include_str!("../src/bin/hp-m177-bridge.rs").contains("APP_DISPLAY_NAME"),
-        "Bonjour instance in Image Capture must be the app display name"
+        include_str!("../src/bin/hp-m177-bridge.rs").contains("airscan_instance_name")
+            && include_str!("../src/model.rs").contains("fn airscan_instance_name"),
+        "Bonjour instance must follow the probed make/model (M177fw keeps APP_DISPLAY_NAME)"
     );
 }

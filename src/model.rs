@@ -6,8 +6,26 @@ use std::time::{SystemTime, UNIX_EPOCH};
 /// Model this product is written against.
 pub const PRODUCT_NAME: &str = "HP Color LaserJet Pro MFP M177fw";
 pub const PRODUCT_SHORT: &str = "M177fw";
-/// Finder / Spotlight / window title for the native scan app.
+/// Finder / Spotlight / window title for the native scan app (validated model).
 pub const APP_DISPLAY_NAME: &str = "HP Color LaserJet Pro MFP M177fw Scanner";
+
+/// Bonjour `_uscan._tcp` instance Image Capture lists. M177fw keeps the
+/// historical `APP_DISPLAY_NAME`; any other probed make/model gets " Scanner".
+pub fn airscan_instance_name(device_name: &str) -> String {
+    let n = device_name.trim();
+    if n.is_empty() {
+        return APP_DISPLAY_NAME.to_string();
+    }
+    if n.eq_ignore_ascii_case(APP_DISPLAY_NAME) {
+        return n.to_string();
+    }
+    let lower = n.to_ascii_lowercase();
+    if lower.ends_with(" scanner") {
+        n.to_string()
+    } else {
+        format!("{n} Scanner")
+    }
+}
 pub const DEFAULT_SOAP_PORT: u16 = 8289;
 pub const DEFAULT_ESCL_PORT: u16 = 80;
 pub const DEFAULT_WSD_PORT: u16 = 3911;
@@ -374,6 +392,7 @@ pub struct SoapCapabilities {
     pub adf_max: (u32, u32),
     pub platen_optical_dpi: u32,
     pub adf_optical_dpi: u32,
+    pub make_and_model: Option<String>,
 }
 
 impl SoapCapabilities {
@@ -426,4 +445,28 @@ pub enum PrintAddOutcome {
     LeftExisting { queue: String },
     Added { queue: String, uri: String },
     Skipped { reason: String },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn m177fw_airscan_instance_stays_historical_display_name() {
+        assert_eq!(airscan_instance_name(PRODUCT_NAME), APP_DISPLAY_NAME);
+        assert_eq!(airscan_instance_name(APP_DISPLAY_NAME), APP_DISPLAY_NAME);
+        assert_eq!(
+            airscan_instance_name(&format!("  {PRODUCT_NAME}  ")),
+            APP_DISPLAY_NAME
+        );
+        assert_eq!(airscan_instance_name(""), APP_DISPLAY_NAME);
+        assert_eq!(
+            airscan_instance_name("Other LAN MFP"),
+            "Other LAN MFP Scanner"
+        );
+        assert_eq!(
+            airscan_instance_name("Other LAN MFP Scanner"),
+            "Other LAN MFP Scanner"
+        );
+    }
 }

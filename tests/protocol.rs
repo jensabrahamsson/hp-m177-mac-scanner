@@ -89,6 +89,16 @@ fn add_by_address_persists_usable_record() {
     }
     assert!(rec.has_platen);
     assert!(rec.has_adf);
+    assert!(
+        rec.name.contains("M177fw"),
+        "add_by_address must store the probed M177fw name, got {}",
+        rec.name
+    );
+    assert_eq!(
+        hp_m177::model::airscan_instance_name(&rec.name),
+        hp_m177::APP_DISPLAY_NAME,
+        "M177fw Image Capture instance must not change in 0.3.0"
+    );
     let reopened = Store::open(store.path.parent().unwrap()).unwrap();
     let again = reopened.get(&rec.id).unwrap();
     assert_eq!(again.host, rec.host);

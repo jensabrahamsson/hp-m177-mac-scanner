@@ -1,7 +1,9 @@
 # Requirements
 
-Product contract for this repository: a Mac scanner client for the
-**HP Color LaserJet Pro MFP M177fw** (CZ165A) on a local network.
+Product contract for this repository: a Mac scanner client for LAN MFPs that
+speak eSCL ScanJobs, HP SOAP/DIME, or WSD Scan (`dib`). **Validated
+hardware:** **HP Color LaserJet Pro MFP M177fw** (CZ165A). Other models are
+best-effort via the same probe; they are not first-class targets.
 
 This is **not** an HP product. There is no affiliation, sponsorship, or
 endorsement by HP Inc. or Hewlett-Packard. “HP”, “LaserJet”, and related
@@ -29,21 +31,25 @@ names belong to their owners.
 8. **Local eSCL + Bonjour `_uscan._tcp`** bridge (`hp-m177-bridge`) so Image
    Capture / Preview / other apps can treat this Mac as an AirScan scanner.
    The GUI **Add Scanner to macOS** action starts the bundled bridge (port
-   8087) and advertises **HP Color LaserJet Pro MFP M177fw Scanner**. The bridge calls the same
-   `scan()` backend. Native device `POST /eSCL/ScanJobs` is 404 on this
-   firmware; the bridge is the Image Capture path.
+   8087) and advertises `_uscan._tcp` as `{probed make/model} Scanner` (on the
+   validated M177fw that is **HP Color LaserJet Pro MFP M177fw Scanner**).
+   The bridge calls the same `scan()` backend. Native device
+   `POST /eSCL/ScanJobs` is 404 on M177fw firmware; the bridge is the Image
+   Capture path.
 9. **Optional AirPrint/CUPS add-printer** only when no queue already exists.
    Never replace the working print queue.
-10. **Job APIs:** prefer native eSCL ScanJobs if they exist; otherwise HP SOAP
-    on TCP **8289** (DIME JPEG); if SOAP does not return pixels, Microsoft
-    **WSD Scan** on TCP **3911** (`/scanner`, document format `dib`).
+10. **Job APIs:** probe the host: native eSCL ScanJobs if they exist; otherwise
+    HP SOAP on TCP **8289** (DIME JPEG, M177fw ticket as the default profile);
+    if SOAP does not return pixels, Microsoft **WSD Scan** on TCP **3911**
+    (`/scanner`, document format `dib`).
 11. **GUI automation** with no clicks: `hp-m177-gui add|scan|list`, the
     AppKit helper `--exec add|scan|scan-all|preview|discover|add-printer|macos`, `--layout-check`,
     and `--button-smoke` (same Add / Preview / Scan handlers as the window).
 12. **Custom Mac app icon** of a **flatbed scanner** (open lid, glass platen),
     not a printer with an output tray (`gui/AppIcon.icns`,
     `CFBundleIconFile=AppIcon`). App name, window title, and Bonjour
-    instance are **HP Color LaserJet Pro MFP M177fw Scanner**.
+    instance default to **HP Color LaserJet Pro MFP M177fw Scanner** on the
+    validated model (Bonjour follows the probed make/model).
     The app registers JPEG/PDF/TIFF document types and an Image Capture
     Automatic Task so scans can be sent to it.
 13. **MIT** license. English docs and code comments.

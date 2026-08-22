@@ -23,6 +23,16 @@ fn main() {
         }
     };
     let device = store.default_device().ok();
+    let (instance, ty) = match &device {
+        Some(d) => (
+            hp_m177::model::airscan_instance_name(&d.name),
+            d.name.clone(),
+        ),
+        None => (
+            hp_m177::APP_DISPLAY_NAME.to_string(),
+            hp_m177::PRODUCT_NAME.to_string(),
+        ),
+    };
     let facade = match hp_m177::facade::EsclFacade::bind(&bind, device) {
         Ok(f) => f,
         Err(e) => {
@@ -36,9 +46,10 @@ fn main() {
         facade.url()
     );
     if !args.no_advertise {
-        match hp_m177::advertise::Advertisement::start(
+        match hp_m177::advertise::Advertisement::start_with_ty(
             facade.addr.port(),
-            hp_m177::APP_DISPLAY_NAME,
+            &instance,
+            &ty,
         ) {
             Ok(_a) => {
                 println!("Advertised _uscan._tcp rs=eSCL is=platen,adf cs=color,grayscale");

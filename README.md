@@ -1,8 +1,9 @@
 # HP Color LaserJet Pro MFP M177fw — Mac scanner client
 
-Scanner client for the **HP Color LaserJet Pro MFP M177fw** (CZ165A) on a Mac.
-The native app is named **HP Color LaserJet Pro MFP M177fw Scanner**. It is
-meant to **sit beside** the working AirPrint print queue, not replace it.
+Scanner client for LAN MFPs that speak **eSCL ScanJobs**, **HP SOAP/DIME**, or
+**WSD Scan** (`dib`). Validated on the **HP Color LaserJet Pro MFP M177fw**
+(CZ165A). The native app is named **HP Color LaserJet Pro MFP M177fw Scanner**.
+It is meant to **sit beside** the working AirPrint print queue, not replace it.
 
 Repository / crate name: `hp-m177`.
 
@@ -40,6 +41,11 @@ firmware advertises `_ipp._tcp` (print) and `_scanner._tcp` → port **8289**
 (DIME JPEG) when that service answers. If SOAP times out, returns Error 4
 or Error 13 after a few retries, or yields no pixels, `scan()` falls back
 to **WSD Scan** on **TCP 3911** (`dib` / BMP).
+
+`scan()` probes **native eSCL jobs first**, then HP SOAP on **TCP 8289**, then
+**WSD** on **TCP 3911**. The AirScan bridge advertises the **probed**
+make/model (on this MFP that is still **HP Color LaserJet Pro MFP M177fw
+Scanner**).
 
 This project:
 
@@ -104,7 +110,7 @@ hp-m177-gui
 ```
 
 The window title is **HP Color LaserJet Pro MFP M177fw Scanner** version
-**0.2.1**. **Discover**, **Add Scanner**, **Preview**, **Scan All**, and
+**0.3.0**. **Discover**, **Add Scanner**, **Preview**, **Scan All**, and
 **Scan** sit along the top (drawn as window subviews; stock `NSButton` cells
 do not appear here). **Scan All** scans the whole page with no preview.
 **Scan** uses a crop rectangle if you dragged one after Preview. Source /
